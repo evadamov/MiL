@@ -26,28 +26,42 @@ interface Mechanic<P, S = unknown> {
 
 interface StepContext {
   stepId: string;
-  trade: TradeContext;        // п. 3; механики стадий demand и supply его меняют
+  trade: Readonly<TradeContext>;     // п. 3
   balances: Readonly<Record<AccountId, number>>;
-  now?: Snapshot;             // только в стадии analysis
+  now?: Snapshot;                    // только в стадии analysis
 }
 
 interface StepResult<S> {
   transactions: Transaction[];       // каждая сбалансирована: сумма ног = 0
   metrics?: Record<string, unknown>; // попадают в metrics.<экземпляр>
-  trade?: Partial<TradeContext>;     // для стадий demand и supply
+  trade?: Partial<TradeContext>;     // только стадия demand: изменения спроса
+  allocation?: Allocation;           // только стадия supply: что кому отдано
   state?: S;                         // состояние экземпляра механики
-  schedule?: Scheduled[];            // отложенные операции, например инкассация
+}
+
+interface Allocation {
+  units: Record<SegmentId, number>;  // сколько единиц получил каждый сегмент очереди
+  unit_cost: number;                 // себестоимость единицы — для unit_margin
+  produced: number;
+  waste_units: number;
 }
 
 interface Transaction { source: string; legs: { account: AccountId; amount: number }[] }
 ```
+
+**Знак суммы в проводке** — по правилу движка ([engine.md](engine.md),
+п. 3): дебет «+», кредит «−». Активы и расходы растут с «+»; обязательства,
+капитал и доходы — с «−». Сумма ног каждой транзакции равна нулю. Ниже все
+проводки записаны в этом виде: `cash +500, loan −500` — заём 500.
 
 Механика:
 
 - чистая функция: никакого `Math.random()`, времени, ввода-вывода. Случайность
   движок передаёт через параметры, вычисленные из seed;
 - пишет только проводки и свои метрики. Отчёты строит учётное ядро
-  (spec.md, п. 5);
+  ([engine.md](engine.md), п. 3);
+- не проводит выручку и не планирует отложенные операции: это делает движок
+  на стадии `settle` (п. 2) по `allocation` механики сбыта;
 - хранит состояние только в своём экземпляре. Чужое состояние ей
   недоступно, общий у шага только торговый контекст;
 - деньги — целые числа. Нецелая сумма в проводке — ошибка `E061`;
@@ -58,22 +72,26 @@ interface Transaction { source: string; legs: { account: AccountId; amount: numb
 
 ## 2. Стадии шага
 
-Движок исполняет шаг по стадиям, внутри стадии — в порядке файла:
+Движок исполняет шаг по стадиям, внутри стадии — в порядке файла. Две
+стадии принадлежат движку, а не механикам:
 
-| Стадия | Что происходит | Механики v1 |
-|---|---|---|
-| `scheduled` | отложенные операции прошлых шагов, срок которых настал | инкассация `credit_sales` |
-| `finance` | деньги и активы, не связанные с продажей | `financing`, `capex`, `inventory` (`stock`, `liquidate`) |
-| `demand` | трафик, конверсия, очередь покупателей | `funnel`, `credit_sales`, `price_response`, `channel` |
-| `supply` | сколько продано из очереди, выручка, себестоимость | `batch_production`, `on_demand_production`, `inventory` (`sell`) |
-| `costs` | расходы периода | `fixed_costs` |
-| `analysis` | расчёты без проводок поверх итогов шага | `projection` |
+| Стадия | Кто | Что происходит | Механики v1 |
+|---|---|---|---|
+| `scheduled` | **движок** | отложенные операции прошлых шагов, срок которых настал: возврат долгов (п. 3.2) | — |
+| `finance` | механики | деньги и активы, не связанные с продажей | `financing`, `capex`, `inventory` (`stock`, `liquidate`) |
+| `demand` | механики | трафик, конверсия, очередь покупателей | `funnel`, `credit_sales`, `price_response`, `channel` |
+| | движок | фиксирует спрос: создаёт сегмент `all`, если очередь пуста (п. 3) | |
+| `supply` | механика | сколько единиц получает каждый сегмент, себестоимость, списания → `allocation` | `batch_production`, `on_demand_production`, `inventory` (`sell`) |
+| `settle` | **движок** | выручка по сегментам и расписание возврата долгов (п. 3.1) | — |
+| `costs` | механики | расходы периода | `fixed_costs` |
+| `analysis` | механики | расчёты без проводок поверх итогов шага | `projection` |
 
-Между `demand` и `supply` движок фиксирует спрос. Здесь же, начиная с
-этапа M3, будут применяться эффекты случайных событий.
+Начиная с этапа M3, после фиксации спроса здесь же будут применяться
+эффекты случайных событий.
 
-Если механика стадии `demand` есть, а механики сбыта нет, — `E033`. Если
-механик сбыта две, — `E032`: очередь нельзя разобрать дважды.
+Если в шаге есть спрос, а механики сбыта нет, — `E033`. Если механик сбыта
+две, — `E032`: очередь нельзя разобрать дважды. Механика сбыта обязана
+вернуть `allocation`, в котором сумма `units` не больше спроса сегментов.
 
 ---
 
@@ -105,18 +123,46 @@ interface Segment {
 - если очередь пуста на конец стадии `demand`, движок создаёт один денежный
   сегмент `all` размером `round(traffic × conversion)`;
 - округление — половина вверх, всегда;
-- сбыт разбирает очередь сверху вниз, пока хватает продукта;
+- механика сбыта разбирает очередь сверху вниз, пока хватает продукта, и
+  возвращает `allocation.units` по сегментам;
 - по итогам движок пишет метрики `metrics.traffic`, `demand`, `sold`,
   `sold_cash`, `sold_credit`, `price`, `conversion` (продано / трафик),
   `demand_conversion` (спрос / трафик), `produced`, `waste_units`,
   `unit_margin` (цена − себестоимость единицы).
+
+### 3.1 Стадия `settle`: выручка и расписание
+
+Движок берёт `allocation.units` и по каждому сегменту с `units > 0`,
+`price` — цена сегмента или цена шага:
+
+| Сегмент | Проводка, источник `sales` | Расписание |
+|---|---|---|
+| `pay: cash` | `cash +units×price, revenue −units×price` | — |
+| `pay: credit` | `receivables +units×price, revenue −units×price` | операция `collect`: шаг `collect_at`, сегмент, `units`, `price`, `return_rate` |
+
+Расписание — часть состояния пути у движка, а не у механики. `collect_at`
+должен быть шагом после шага продажи (`E046`).
+
+### 3.2 Стадия `scheduled`: возврат долгов
+
+В начале шага `collect_at` движок исполняет его операции `collect`:
+`returned = round(units × return_rate)`, источник `collections`:
+
+- `cash +returned×price, receivables −returned×price`;
+- `bad_debt +(units−returned)×price, receivables −(units−returned)×price`.
+
+Метрики `metrics.collections`: `returned`, `written_off`,
+`returned_amount`, `written_off_amount` и разбивка по сегментам.
+
+Новые виды отложенных операций (погашение займа по графику, амортизация)
+добавляются в движок вместе с механикой, которой они нужны.
 
 ---
 
 ## 4. Механики v1
 
 Для каждой механики указаны параметры, проводки и метрики. Счета — из
-стандартного плана (spec.md, п. 5.1), если в параметрах не указан другой.
+стандартного плана ([engine.md](engine.md), п. 3.1), если в параметрах не указан другой.
 
 ### `funnel` · demand
 
@@ -154,7 +200,7 @@ interface Segment {
 | `conversion_by_key` | `{"<ключ>": 0…1}` | необязательно; конверсия при совпадении предложения; ключ — строкой |
 | `source` | строка | по умолчанию `marketing` |
 
-Проводка: `marketing` +cost / `cash` −cost. Прибавляет `traffic_add` к
+Проводка: `marketing +cost, cash −cost`. Прибавляет `traffic_add` к
 трафику. Если для выбранного ключа есть `conversion_by_key`, она заменяет
 текущую конверсию. Тиры и конверсия разделены, чтобы один прайс канала из
 `params` использовался в шагах с разной реакцией аудитории.
@@ -172,19 +218,10 @@ interface Segment {
 | `price` | целое | цена по умолчанию |
 | `segments` | `[Segment]` | п. 3; у `credit` обязательны `return_rate` и `collect_at` |
 
-Добавляет сегменты в очередь. Выручку проводит механика сбыта: за
-денежный сегмент — `cash`, за кредитный — `receivables`. Механика сбыта
-сообщает, сколько продано каждому кредитному сегменту, и механика ставит
-инкассацию в расписание.
-
-Инкассация, стадия `scheduled` шага `collect_at`: по каждому сегменту
-`returned = round(sold × return_rate)`. Проводки: `cash` +returned × price
-/ `receivables` −; `bad_debt` +(sold − returned) × price / `receivables` −.
-Метрики `metrics.collections`: `returned`, `written_off`,
-`returned_amount`, `written_off_amount`, разбивка по сегментам.
-
-Если путь не проходит через `collect_at`, долг остаётся на балансе
-(`W040`).
+Только добавляет сегменты в очередь, проводок нет. Сколько продано
+каждому сегменту, решает механика сбыта; выручку в долг и возврат долгов
+проводит движок (п. 3.1–3.2) по полям сегмента `pay`, `return_rate`,
+`collect_at`.
 
 ### `batch_production` · supply
 
@@ -196,9 +233,9 @@ interface Segment {
 | `unit_cost` | целое ≥ 0 | |
 | `source` | строка | по умолчанию `production` |
 
-`sold = min(спрос, quantity)` по очереди. Проводки: выручка по сегментам;
-`cogs` +sold × unit_cost, `waste` +(quantity − sold) × unit_cost /
-`cash` −quantity × unit_cost.
+`sold = min(спрос, quantity)`, очередь разбирается сверху вниз →
+`allocation`. Проводка: `cogs +sold×unit_cost, waste +(quantity−sold)×unit_cost,
+cash −quantity×unit_cost`. Выручку проводит движок (п. 3.1).
 
 ### `on_demand_production` · supply
 
@@ -210,8 +247,8 @@ interface Segment {
 | `capacity` | целое | необязательно; потолок продаж |
 | `source` | строка | по умолчанию `production` |
 
-`sold = min(спрос, capacity)`. Проводки: выручка; `cogs` / `cash`
-−sold × unit_cost.
+`sold = min(спрос, capacity)` → `allocation`. Проводка:
+`cogs +sold×unit_cost, cash −sold×unit_cost`. Выручку проводит движок.
 
 ### `inventory` · finance или supply
 
@@ -219,9 +256,9 @@ interface Segment {
 
 | `mode` | Стадия | Параметры | Проводки |
 |---|---|---|---|
-| `stock` | finance | `units`, `unit_cost` | `inventory` + / `cash` − |
-| `sell` | supply | `unit_cost`, `restock: true\|false` | выручка; `cogs` + / `inventory` −; при `restock` — докупка проданного: `inventory` + / `cash` − |
-| `liquidate` | finance | `price_per_unit`, по умолчанию себестоимость | `cash` + / `inventory` −, разница — в `revenue` или `cogs` |
+| `stock` | finance | `units`, `unit_cost` | `inventory +units×unit_cost, cash −units×unit_cost` |
+| `sell` | supply | `unit_cost`, `restock: true\|false` | → `allocation`; `cogs +sold×unit_cost, inventory −sold×unit_cost`; при `restock` — докупка проданного: `inventory +sold×unit_cost, cash −sold×unit_cost`. Выручку проводит движок |
+| `liquidate` | finance | — | распродажа всего остатка по себестоимости: `cash +стоимость, inventory −стоимость`; прибыли нет |
 
 При `sell` продажи ограничены остатком на полке. Состояние экземпляра
 переходит из шага в шаг по имени `id`, поэтому `stock`, `sell` и
@@ -235,7 +272,7 @@ interface Segment {
 | `account` | счёт расходов | по умолчанию `fixed_costs` |
 | `source` | строка | обязательно: подпись в Cash Flow |
 
-Проводка: `account` + / `cash` −.
+Проводка: `<account> +amount, cash −amount`.
 
 ### `capex` · finance
 
@@ -245,7 +282,7 @@ interface Segment {
 | `account` | счёт активов | по умолчанию `equipment` |
 | `source` | строка | обязательно |
 
-Проводка: актив + / `cash` −. Амортизации в v1 нет.
+Проводка: `<account> +amount, cash −amount`. Амортизации в v1 нет.
 
 ### `financing` · finance
 
@@ -255,7 +292,9 @@ interface Segment {
 | `account` | счёт обязательств | по умолчанию `loan` |
 | `source` | строка | обязательно |
 
-Проводка: `cash` + / обязательство +. Погашение, комиссии и взнос капитала —
+Проводка: `cash +amount, <account> −amount`. Пример: заём 500 —
+`cash +500, loan −500`; в балансе снимка долг показан положительным
+(`balance.loan = 500`). Погашение, комиссии и взнос капитала —
 позже: новыми параметрами внутри мажора 1, старые сценарии не меняются.
 
 ### `projection` · analysis
@@ -294,7 +333,7 @@ interface Segment {
 новой механики показываются стандартными панелями `metrics` и `table`,
 которые настраиваются в `.md`. Если механике понадобился свой экран или
 новый счёт с особой логикой проекции, — это расширение платформы, а не
-механики, и решается отдельно (spec.md, п. 11).
+механики, и решается отдельно ([engine.md](engine.md), п. 1).
 
 Изменение поведения существующей механики — новый мажор (`funnel@2`).
 Старый мажор остаётся в библиотеке, пока на него ссылается хоть один
