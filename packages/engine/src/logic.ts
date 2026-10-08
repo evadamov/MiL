@@ -50,37 +50,43 @@ export function logicProblems(rule: unknown, ptr = ""): { ptr: string; message: 
   return logicProblems((rule as Record<string, unknown>)[op], `${ptr}/${op}`);
 }
 
-/** Операции, у которых аргументы после первого вычисляются в контексте элемента, а не данных. */
-const SCOPED = new Set(["map", "filter", "reduce", "all", "some", "none"]);
+/** Переменная без значения по умолчанию, которой нет в данных. */
+class MissingVar extends Error {
+  constructor(public path: string) {
+    super(path);
+  }
+}
 
 /**
- * Переменные выражения без значения по умолчанию, которых нет в данных.
- * JSONLogic молча вернул бы null — и условие стало бы ложным, а механика тихо
- * пропустилась бы. Поэтому вычисление строгое: такая переменная — ошибка ссылки.
+ * Строгий var: то же, что встроенный в JSONLogic, но отсутствующий путь без
+ * значения по умолчанию — ошибка, а не тихий null (иначе условие стало бы ложным
+ * и механика с when незаметно пропустилась бы). Проверка идёт во время
+ * вычисления, поэтому учитывает только реально вычисляемые ветки: невыбранная
+ * ветка if, хвост and/or после досрочного выхода, элементы map/filter — как в JSONLogic.
  */
-export function missingVars(rule: unknown, data: unknown): string[] {
-  if (Array.isArray(rule)) return rule.flatMap((x) => missingVars(x, data));
-  if (!rule || typeof rule !== "object") return [];
-  const [op] = Object.keys(rule);
-  const arg = (rule as Record<string, unknown>)[op];
-  if (op === "var") {
-    if (Array.isArray(arg) && arg.length > 1) return []; // есть значение по умолчанию
-    const p = Array.isArray(arg) ? arg[0] : arg;
-    if (typeof p !== "string" || p === "") return [];
-    return getPath(data, p) === undefined ? [p] : [];
+jsonLogic.add_operation("var", function (this: unknown, a: unknown, b?: unknown) {
+  const hasDefault = arguments.length > 1;
+  const notFound = () => {
+    if (hasDefault) return b;
+    throw new MissingVar(String(a));
+  };
+  let data: unknown = this;
+  if (a === undefined || a === "" || a === null) return data;
+  for (const key of String(a).split(".")) {
+    if (data === null || data === undefined) return notFound();
+    data = (data as Record<string, unknown>)[key];
+    if (data === undefined) return notFound();
   }
-  if (SCOPED.has(op) && Array.isArray(arg)) return missingVars(arg[0], data);
-  return missingVars(arg, data);
-}
+  return data;
+});
 
 export function evalLogic(rule: Json, data: unknown): unknown {
   const problems = logicProblems(rule);
   if (problems.length) throw new LogicError(problems[0].message);
-  const missing = missingVars(rule, data);
-  if (missing.length) throw new RefError(`$${missing[0]}`);
   try {
     return jsonLogic.apply(rule as never, data as never);
   } catch (e) {
+    if (e instanceof MissingVar) throw new RefError(`$${e.path}`);
     throw new LogicError(`выражение не вычислилось: ${(e as Error).message}`);
   }
 }

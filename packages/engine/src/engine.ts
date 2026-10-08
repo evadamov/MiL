@@ -87,12 +87,16 @@ export function normalizeInput(inp: InputDef, raw: unknown): string | number {
 /** Значение хода: решение команды, иначе default для решений и null для квизов и прогнозов. */
 export function inputValue(step: StepDef, inp: InputDef, decisions: Decisions): string | number | null {
   const key = `${step.id}.${inp.id}`;
-  const v = key in decisions ? decisions[key] : undefined;
-  if (v === undefined || v === null) return isModelInput(inp) ? (inp.default ?? null) : null;
+  const given = key in decisions ? decisions[key] : undefined;
+  const missing = given === undefined || given === null;
+  if (missing && !isModelInput(inp)) return null;
+  const v = missing ? inp.default : given;
+  if (v === undefined) return null;
+  // И ход, и значение по умолчанию проходят одну проверку.
   try {
     return normalizeInput(inp, v);
   } catch (e) {
-    if (e instanceof InputValueError) throw new EngineError("E071", `${key}: ${e.message}`, step.id);
+    if (e instanceof InputValueError) throw new EngineError(missing ? "E043" : "E071", `${key}${missing ? " (default)" : ""}: ${e.message}`, step.id);
     throw e;
   }
 }

@@ -428,16 +428,17 @@ function legendBlocks(doc: SessionDoc, i: number, r: PathResult): Block[] {
   return blocks;
 }
 
-function moveBlocks(doc: SessionDoc, i: number, r: PathResult): Block[] {
+/** team = true: условный вариант выбирается по данным команды до хода; проектор — запасной текст. */
+function moveBlocks(doc: SessionDoc, i: number, r: PathResult, team = false): Block[] {
   const step = stepAt(doc, i);
-  const move = slotText(doc, step, "move", null);
+  const move = slotText(doc, step, "move", team ? beforeCtx(doc, r, i) : null);
   return move ? [{ type: "html", tone: "move", html: md(doc.scenario, move, beforeCtx(doc, r, i)) }] : legendBlocks(doc, i, r);
 }
 
-function debriefBlocks(doc: SessionDoc, i: number, r: PathResult, withDiscussion: boolean): Block[] {
+function debriefBlocks(doc: SessionDoc, i: number, r: PathResult, withDiscussion: boolean, team = false): Block[] {
   const step = stepAt(doc, i);
   const out: Block[] = [];
-  const d = slotText(doc, step, "debrief", null);
+  const d = slotText(doc, step, "debrief", team ? afterCtx(doc, r, i) : null);
   if (d) out.push({ type: "html", tone: "debrief", html: md(doc.scenario, d, afterCtx(doc, r, i)) });
   const q = withDiscussion ? slotText(doc, step, "discussion", null) : null;
   if (q) out.push({ type: "html", tone: "discussion", html: md(doc.scenario, q, afterCtx(doc, r, i)) });
@@ -496,9 +497,9 @@ export function teamView(doc: SessionDoc, team: Team): TeamView {
   if (phase === "legend") blocks = legendBlocks(doc, i, r);
   else if (phase === "intake" || phase === "closed") {
     const fields = (step.block.inputs ?? []).map((inp) => fieldOf(doc, team, step, inp));
-    blocks = [...moveBlocks(doc, i, r), { type: "form", stepId: step.id, open: phase === "intake", fields }];
+    blocks = [...moveBlocks(doc, i, r, true), { type: "form", stepId: step.id, open: phase === "intake", fields }];
   } else if (phase === "results") blocks = resultsBlocks(doc, c, i, mode);
-  else blocks = debriefBlocks(doc, i, r, false);
+  else blocks = debriefBlocks(doc, i, r, false, true);
 
   // «Мои дни»: раскрытые шаги с расчётом
   const dayRows: string[][] = [];

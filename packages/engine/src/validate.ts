@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { compileScenario } from "./compiler/compile.ts";
-import { EngineError, evalCondition, isModelInput, pathData, pathDataAt, runPath, type PathResult } from "./engine.ts";
+import { EngineError, InputValueError, evalCondition, isModelInput, normalizeInput, pathData, pathDataAt, runPath, type PathResult } from "./engine.ts";
 import { LogicError, RefError, collectRefs, evalLogic, exprsIn, getPath, isExpr, isRef, logicProblems, resolveValue } from "./logic.ts";
 import { MECHANICS, stageOf } from "./mechanics/index.ts";
 import type { Condition, Decisions, Diagnostic, Json, Pos, Scenario, StepDef } from "./types.ts";
@@ -73,11 +73,13 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
     } else if (ns === "input") {
       const inp = step?.block.inputs?.find((i) => i.id === rest[0]);
       if (!inp) bad("E040", `в шаге нет поля ${rest[0]}`);
+      else if (ctx === "legend") bad("E041", `ход ${rest[0]} этого шага ещё не сделан — до хода его не видно`);
       else if (ctx === "mechanic" && !isModelInput(inp)) bad("E044", `механика ссылается на ${inp.type} ${inp.id}: он не меняет модель`);
     } else if (ns === "inputs") {
       const { step: s, inp } = findInput(`${rest[0]}.${rest[1]}`);
       if (!s) bad("E040", `нет шага ${rest[0]}`);
       else if (stepIndex.get(s.id)! > cur) bad("E041", `ссылка на будущий шаг ${s.id}`);
+      else if (ctx === "legend" && stepIndex.get(s.id)! === cur) bad("E041", `ход ${s.id}.${rest[1]} этого шага ещё не сделан — до хода его не видно`);
       else if (!inp) bad("E040", `в шаге ${s.id} нет поля ${rest[1]}`);
       else if (ctx === "mechanic" && !isModelInput(inp)) bad("E044", `механика ссылается на ${inp.type} ${s.id}.${inp.id}`);
     } else if (ns === "at") {
@@ -150,12 +152,18 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       if (isModelInput(inp)) {
         if (inp.default === undefined) diag({ code: "E043", message: `у ${inp.type} ${inp.id} нет default`, pos: at(ip), where: `step ${step.id}` });
         if (inp.type === "number" && !inp.samples) diag({ code: "E043", message: `у number ${inp.id} нет samples`, pos: at(ip), where: `step ${step.id}` });
-        if (inp.type === "choice" && inp.default !== undefined && !inp.options!.some((o) => o.value === inp.default))
-          diag({ code: "E043", message: `default ${inp.default} не среди вариантов`, pos: at(`${ip}/default`) });
-        const vals = inp.type === "number" ? [...(inp.samples ?? []), ...(inp.default !== undefined ? [Number(inp.default)] : [])] : [];
-        for (const x of vals)
-          if ((inp.min !== undefined && x < inp.min) || (inp.max !== undefined && x > inp.max))
-            diag({ code: "E043", message: `значение ${x} вне [${inp.min}, ${inp.max}]`, pos: at(ip) });
+        // default и samples — той же проверкой, что ход команды: иначе подставленное
+        // значение по умолчанию могло бы нарушить step или диапазон, который форма не примет.
+        const own = (raw: unknown, where: string, ptr: string) => {
+          try {
+            normalizeInput(inp, raw);
+          } catch (e) {
+            if (!(e instanceof InputValueError)) throw e;
+            diag({ code: "E043", message: `${where} ${JSON.stringify(raw)}: ${e.message}`, pos: at(ptr, step.pos), where: `step ${step.id}` });
+          }
+        };
+        if (inp.default !== undefined) own(inp.default, "default", `${ip}/default`);
+        (inp.samples ?? []).forEach((x, k) => own(x, "samples", `${ip}/samples/${k}`));
       }
       if (inp.type === "quiz") checkValue(inp.answer, step, "after", `${ip}/answer`);
     });
@@ -200,7 +208,8 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       if ((p === "variants" || (p && typeof p === "object" && "variants" in p)) && !b.variants?.length)
         diag({ code: "E040", message: "панель variants без variants в шаге", pos: at(`${ptr}/results`) });
     }
-    for (const s of step.slots) if (s.cond) checkCond(s.cond, step, "after", ptr);
+    // Условие слота — в контексте его фазы: move показывается до хода, остальные — после.
+    for (const s of step.slots) if (s.cond) checkCond(s.cond, step, s.name === "move" ? "legend" : "after", `${ptr}/slots/${s.name}`);
     if (b.legend?.image) {
       const img = b.legend.image;
       const file = path.join(sc.dir, img);
@@ -358,7 +367,7 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       for (const s of step.slots)
         if (s.cond)
           try {
-            evalCondition(s.cond, step, sc, after);
+            evalCondition(s.cond, step, sc, s.name === "move" ? before : after);
           } catch (e) {
             diag({ code: "E040", message: (e as Error).message, pos: s.pos });
           }

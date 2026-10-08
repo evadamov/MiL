@@ -12,8 +12,8 @@
 ## Команды
 
 ```bash
-npm install
-npm test                                   # тесты движка и всех сценариев
+npm install                                # в корне: ставит зависимости движка и приложения
+npm test                                   # тесты движка, всех сценариев и приложения
 npm run sim -- validate                    # проверка всех сценариев, как при сборке
 npm run sim -- validate scenarios/lemonade # один сценарий
 npm run sim -- play scenarios/lemonade d2.jug=buy d14_order.prep=19
