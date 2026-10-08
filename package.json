@@ -1,10 +1,16 @@
 {
   "name": "mil",
   "private": true,
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "test": "npm run test -w @mil/engine",
-    "typecheck": "npm run typecheck -w @mil/engine",
-    "sim": "npm run sim -w @mil/engine --"
+    "test": "npm run test -w @mil/engine && npm run test -w @mil/web",
+    "typecheck": "npm run typecheck -w @mil/engine && npm run typecheck -w @mil/web",
+    "sim": "npm run sim -w @mil/engine --",
+    "dev": "npm run dev -w @mil/web",
+    "build": "npm run build -w @mil/web",
+    "start": "npm run start -w @mil/web"
   }
 }
