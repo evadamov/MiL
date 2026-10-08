@@ -61,29 +61,51 @@ export function isModelInput(inp: InputDef): boolean {
   return inp.type === "choice" || inp.type === "number";
 }
 
+export class InputValueError extends Error {}
+
+/**
+ * Единая проверка значения хода — для движка, API и веб-формы.
+ * Возвращает нормализованное значение: вариант choice в его исходном типе, число.
+ */
+export function normalizeInput(inp: InputDef, raw: unknown): string | number {
+  if (inp.type === "choice") {
+    const opt = inp.options!.find((o) => String(o.value) === String(raw));
+    if (!opt) throw new InputValueError(`нет варианта ${JSON.stringify(raw)}`);
+    return opt.value;
+  }
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw.trim().replace(",", ".")) : NaN;
+  if (!Number.isFinite(n)) throw new InputValueError(`нужно число, получено ${JSON.stringify(raw)}`);
+  if (inp.min !== undefined && n < inp.min) throw new InputValueError(`не меньше ${inp.min}, получено ${n}`);
+  if (inp.max !== undefined && n > inp.max) throw new InputValueError(`не больше ${inp.max}, получено ${n}`);
+  if (inp.type === "number" && inp.step) {
+    const k = (n - (inp.min ?? 0)) / inp.step;
+    if (Math.abs(k - Math.round(k)) > 1e-9) throw new InputValueError(`шаг ${inp.step}${inp.min ? ` от ${inp.min}` : ""}, получено ${n}`);
+  }
+  return n;
+}
+
 /** Значение хода: решение команды, иначе default для решений и null для квизов и прогнозов. */
 export function inputValue(step: StepDef, inp: InputDef, decisions: Decisions): string | number | null {
   const key = `${step.id}.${inp.id}`;
   const v = key in decisions ? decisions[key] : undefined;
   if (v === undefined || v === null) return isModelInput(inp) ? (inp.default ?? null) : null;
-  if (inp.type === "choice" && !inp.options!.some((o) => o.value === v))
-    throw new EngineError("E071", `${key}: значения ${JSON.stringify(v)} нет среди вариантов`, step.id);
-  if (inp.type === "number" || inp.type === "quiz" || inp.type === "forecast") {
-    if (typeof v !== "number") throw new EngineError("E071", `${key}: ожидалось число, получено ${JSON.stringify(v)}`, step.id);
-    if ((inp.min !== undefined && v < inp.min) || (inp.max !== undefined && v > inp.max))
-      throw new EngineError("E071", `${key}: ${v} вне диапазона [${inp.min ?? "−∞"}, ${inp.max ?? "∞"}]`, step.id);
+  try {
+    return normalizeInput(inp, v);
+  } catch (e) {
+    if (e instanceof InputValueError) throw new EngineError("E071", `${key}: ${e.message}`, step.id);
+    throw e;
   }
-  return v;
 }
 
-export function evalCondition(c: Condition | undefined, step: StepDef | undefined, sc: Scenario, data: unknown): boolean {
+export function evalCondition(c: Condition | undefined, step: StepDef | undefined, sc: Scenario, data: unknown, chain: string[] = []): boolean {
   if (c === undefined) return true;
   if (typeof c === "string") {
     const neg = c.startsWith("!");
     const name = neg ? c.slice(1) : c;
+    if (chain.includes(name)) throw new LogicError(`цикл условий: ${[...chain, name].join(" → ")}`);
     const def = step?.block.conditions?.[name] ?? sc.root.conditions?.[name];
-    if (!def) throw new Error(`условие ${name} не объявлено`);
-    const r = evalCondition(def, step, sc, data);
+    if (!def) throw new LogicError(`условие ${name} не объявлено`);
+    const r = evalCondition(def, step, sc, data, [...chain, name]);
     return neg ? !r : r;
   }
   return !!evalLogic(c.expr, data);
@@ -193,14 +215,21 @@ export function runPath(sc: Scenario, decisions: Decisions): PathResult {
       if (stageIdx > STAGE_ORDER.indexOf("supply")) settle();
       const now = stage === "analysis" ? snapshot() : undefined;
       const d = data(now ? { now } : {});
-      let params: Record<string, unknown>;
+      let params: Record<string, unknown> = {};
+      const fail = (e: unknown, where: string): never => {
+        if (e instanceof RefError) throw new EngineError("E041", `${e.message} — в момент исполнения механики ${call.use} этого значения ещё нет`, sid, `${pointer}/${where}`);
+        if (e instanceof LogicError) throw new EngineError("E040", e.message, sid, `${pointer}/${where}`);
+        throw e;
+      };
       try {
         if (!evalCondition(call.when, step, sc, d)) continue;
+      } catch (e) {
+        fail(e, "when");
+      }
+      try {
         params = resolveValue((call.params ?? {}) as Json, d) as Record<string, unknown>;
       } catch (e) {
-        if (e instanceof RefError) throw new EngineError("E041", e.message, sid, `${pointer}/params`);
-        if (e instanceof LogicError) throw new EngineError("E040", e.message, sid, `${pointer}/params`);
-        throw e;
+        fail(e, "params");
       }
       const validate = paramsValidator(call.use);
       if (!validate(params)) {

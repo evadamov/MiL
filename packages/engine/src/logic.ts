@@ -50,9 +50,34 @@ export function logicProblems(rule: unknown, ptr = ""): { ptr: string; message: 
   return logicProblems((rule as Record<string, unknown>)[op], `${ptr}/${op}`);
 }
 
+/** Операции, у которых аргументы после первого вычисляются в контексте элемента, а не данных. */
+const SCOPED = new Set(["map", "filter", "reduce", "all", "some", "none"]);
+
+/**
+ * Переменные выражения без значения по умолчанию, которых нет в данных.
+ * JSONLogic молча вернул бы null — и условие стало бы ложным, а механика тихо
+ * пропустилась бы. Поэтому вычисление строгое: такая переменная — ошибка ссылки.
+ */
+export function missingVars(rule: unknown, data: unknown): string[] {
+  if (Array.isArray(rule)) return rule.flatMap((x) => missingVars(x, data));
+  if (!rule || typeof rule !== "object") return [];
+  const [op] = Object.keys(rule);
+  const arg = (rule as Record<string, unknown>)[op];
+  if (op === "var") {
+    if (Array.isArray(arg) && arg.length > 1) return []; // есть значение по умолчанию
+    const p = Array.isArray(arg) ? arg[0] : arg;
+    if (typeof p !== "string" || p === "") return [];
+    return getPath(data, p) === undefined ? [p] : [];
+  }
+  if (SCOPED.has(op) && Array.isArray(arg)) return missingVars(arg[0], data);
+  return missingVars(arg, data);
+}
+
 export function evalLogic(rule: Json, data: unknown): unknown {
   const problems = logicProblems(rule);
   if (problems.length) throw new LogicError(problems[0].message);
+  const missing = missingVars(rule, data);
+  if (missing.length) throw new RefError(`$${missing[0]}`);
   try {
     return jsonLogic.apply(rule as never, data as never);
   } catch (e) {

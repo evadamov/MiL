@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { compileScenario } from "./compiler/compile.ts";
 import { EngineError, evalCondition, isModelInput, pathData, pathDataAt, runPath, type PathResult } from "./engine.ts";
-import { LogicError, collectRefs, evalLogic, exprsIn, getPath, isExpr, isRef, logicProblems, resolveValue } from "./logic.ts";
+import { LogicError, RefError, collectRefs, evalLogic, exprsIn, getPath, isExpr, isRef, logicProblems, resolveValue } from "./logic.ts";
 import { MECHANICS, stageOf } from "./mechanics/index.ts";
 import type { Condition, Decisions, Diagnostic, Json, Pos, Scenario, StepDef } from "./types.ts";
 import { variantRows } from "./variants.ts";
@@ -62,10 +62,11 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
   };
 
   // ---------- статические проверки ----------
-  const checkRef = (ref: string, step: StepDef | undefined, ctx: Ctx, pointer: string) => {
+  const checkRef = (ref: string, step: StepDef | undefined, ctx: Ctx, pointer: string, via?: string) => {
     const [ns, ...rest] = ref.split(".");
     const pos = at(pointer, step?.pos);
-    const bad = (code: string, message: string) => diag({ code, message, pos, where: step ? `step ${step.id}` : undefined });
+    const bad = (code: string, message: string) =>
+      diag({ code, message: via ? `${message} (${via})` : message, pos, where: step ? `step ${step.id}` : undefined });
     const cur = step ? stepIndex.get(step.id)! : sc.steps.length;
     if (ns === "p") {
       if (getPath(sc.root.params, rest.join(".")) === undefined) bad("E040", `нет параметра ${ref}`);
@@ -94,16 +95,41 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       if (ctx !== "after") bad("E040", "$metrics доступен только в панелях и тексте результатов");
     } else bad("E040", `неизвестное пространство имён «${ns}» в ${ref}`);
   };
-  const checkValue = (v: unknown, step: StepDef | undefined, ctx: Ctx, pointer: string) => {
-    for (const r of collectRefs(v)) checkRef(r, step, ctx, pointer);
+  const checkValue = (v: unknown, step: StepDef | undefined, ctx: Ctx, pointer: string, via?: string) => {
+    for (const r of collectRefs(v)) checkRef(r, step, ctx, pointer, via);
   };
-  const checkCond = (c: Condition | undefined, step: StepDef | undefined, ctx: Ctx, pointer: string) => {
+  const CTX_NAMES: Record<Ctx, string> = {
+    mechanic: "при исполнении механики",
+    analysis: "при исполнении механики стадии analysis",
+    after: "после закрытия приёма",
+    legend: "во вводной",
+  };
+  /**
+   * Именованное условие проверяется в контексте КАЖДОГО места использования:
+   * одно и то же условие допустимо в тексте результатов, но не в when механики,
+   * если ссылается на ещё не посчитанный шаг. Цепочки имён — без циклов.
+   */
+  const checkCond = (c: Condition | undefined, step: StepDef | undefined, ctx: Ctx, pointer: string, chain: string[] = [], usePointer = pointer) => {
     if (c === undefined) return;
+    const where = step ? `step ${step.id}` : undefined;
     if (typeof c === "string") {
       const name = c.replace(/^!/, "");
-      if (!step?.block.conditions?.[name] && !sc.root.conditions?.[name])
-        diag({ code: "E040", message: `условие ${name} не объявлено`, pos: at(pointer, step?.pos), where: step ? `step ${step.id}` : undefined });
-    } else checkValue(c, step, ctx, pointer);
+      if (chain.includes(name)) {
+        diag({ code: "E040", message: `цикл условий: ${[...chain, name].join(" → ")}`, pos: at(pointer, step?.pos), where });
+        return;
+      }
+      const own = step?.block.conditions?.[name];
+      const def = own ?? sc.root.conditions?.[name];
+      if (!def) {
+        diag({ code: "E040", message: `условие ${name} не объявлено`, pos: at(pointer, step?.pos), where });
+        return;
+      }
+      const defPointer = own ? `step:${step!.id}/conditions/${name}` : `root/conditions/${name}`;
+      checkCond(def, step, ctx, defPointer, [...chain, name], usePointer);
+    } else {
+      const via = chain.length ? `условие ${chain.join(" → ")} используется ${CTX_NAMES[ctx]}: ${usePointer.replace(/^step:[^/]+\//, "")}` : undefined;
+      checkValue(c, step, ctx, pointer, via);
+    }
   };
 
   if (!sc.checks.find((c) => c.id === sc.root.reference))
@@ -403,8 +429,8 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       }
     }
     } catch (e) {
-      if (!(e instanceof LogicError)) throw e;
-      diag({ code: "E070", message: `вывод ${l.id} не вычислился: ${e.message}`, pos: at(`lesson:${l.id}/assert`, l.pos), where: `lesson ${l.id}` });
+      if (!(e instanceof LogicError) && !(e instanceof RefError)) throw e;
+      diag({ code: "E070", message: `вывод ${l.id} не вычислился: ${(e as Error).message}`, pos: at(`lesson:${l.id}/assert`, l.pos), where: `lesson ${l.id}` });
       continue;
     }
     // Заявленный вывод, который не проверился ни на одном пути, — ошибка, а не «зелёный».

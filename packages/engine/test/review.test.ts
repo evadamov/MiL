@@ -77,7 +77,8 @@ mechanics:
 });
 
 describe("3. вводная не видит будущих ходов", () => {
-  const tea = fs.readFileSync(path.join(REPO, "scenarios/rink_tea/scenario.md"), "utf8");
+  // Переносы нормализуются: в checkout на Windows файл может быть с CRLF.
+  const tea = fs.readFileSync(path.join(REPO, "scenarios/rink_tea/scenario.md"), "utf8").replace(/\r\n/g, "\n");
 
   it("{{inputs.sun.thermoses}} во вводной пятницы — E080", () => {
     const md = tea.replace("Пятница: катаются в основном после работы.", "Пятница: в воскресенье заварим {{inputs.sun.thermoses}}.");

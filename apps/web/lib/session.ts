@@ -1,7 +1,7 @@
 // Логика сессии воркшопа (docs/spec.md, п. 3, 6): фазы шага, два указателя —
 // шаг игры и показ на проекторе, приём ходов, значения по умолчанию.
 // Чистые функции над документом сессии; хранение — в store.ts.
-import { isModelInput, type Decisions, type InputDef, type Scenario, type StepDef } from "@mil/engine";
+import { InputValueError, isModelInput, normalizeInput, type Decisions, type InputDef, type Scenario, type StepDef } from "@mil/engine";
 
 export type Phase = "legend" | "intake" | "closed" | "results" | "debrief";
 export type MoveSource = "team" | "default" | "trainer";
@@ -101,21 +101,14 @@ export function decisionsOf(doc: SessionDoc, teamId: string): Decisions {
   return d;
 }
 
+/** Проверка хода — та же функция, что в движке: одно правило для API, формы и runPath. */
 export function checkValue(inp: InputDef, raw: unknown): string | number {
-  if (inp.type === "choice") {
-    const opt = inp.options!.find((o) => String(o.value) === String(raw));
-    if (!opt) throw new SessionError(`${inp.label}: нет такого варианта`);
-    return opt.value;
+  try {
+    return normalizeInput(inp, raw);
+  } catch (e) {
+    if (e instanceof InputValueError) throw new SessionError(`${inp.label}: ${e.message}`);
+    throw e;
   }
-  const n = typeof raw === "number" ? raw : Number(String(raw).replace(",", "."));
-  if (raw === "" || raw === null || raw === undefined || !Number.isFinite(n)) throw new SessionError(`${inp.label}: нужно число`);
-  if (inp.min !== undefined && n < inp.min) throw new SessionError(`${inp.label}: не меньше ${inp.min}`);
-  if (inp.max !== undefined && n > inp.max) throw new SessionError(`${inp.label}: не больше ${inp.max}`);
-  if (inp.type === "number" && inp.step) {
-    const k = (n - (inp.min ?? 0)) / inp.step;
-    if (Math.abs(k - Math.round(k)) > 1e-9) throw new SessionError(`${inp.label}: шаг ${inp.step}`);
-  }
-  return n;
 }
 
 // ---------- действия команды ----------
