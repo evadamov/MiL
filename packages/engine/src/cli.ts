@@ -46,7 +46,12 @@ function validate(args: string[]): number {
     console.log(`\n${errs.length ? "✗" : "✓"} ${name}`);
     if (rep.scenario) {
       const t = rep.time;
-      console.log(`  шагов ${rep.scenario.steps.length}, путей ${rep.paths}${rep.sampled ? " (выборка)" : ""}${t ? `, время ${t.min}–${t.max} из ${t.budget} мин` : ""}`);
+      const fmtN = (n: number | null) => (n === null ? "∞" : n.toLocaleString("ru-RU"));
+      const partial = rep.sampled || rep.partialInputs.length > 0;
+      console.log(`  шагов ${rep.scenario.steps.length}${t ? `, время ${t.min}–${t.max} из ${t.budget} мин` : ""}`);
+      console.log(`  путей проверено ${fmtN(rep.paths)} из ${fmtN(rep.space)} допустимых сочетаний ходов${partial ? " — выборка" : " — все"}`);
+      if (rep.sampled) console.log("    сочетаний слишком много: каждое значение каждого хода проверено хотя бы раз, остальные — по умолчанию");
+      for (const x of rep.partialInputs) console.log(`    ${x.key}: по samples — ${x.samples} из ${fmtN(x.values)} значений`);
       for (const l of rep.lessons) if (l.kind !== "unverified") console.log(`  вывод ${l.id}: ${l.passed}/${l.total}`);
       if (infos.length) console.log(`  выводов без механической проверки: ${infos.length}`);
       for (const c of rep.checks) console.log(`  проверка ${c.id}: ${c.passed}/${c.total}`);

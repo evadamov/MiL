@@ -26,8 +26,46 @@ jsonLogic.add_operation("argmin", (rows: Row[], field: string) => arg(rows, fiel
 
 export const PLATFORM_OPERATIONS = ["round", "argmax", "argmin"];
 
+// Белый список: только чистые операции без побочных эффектов. Встроенная `log`
+// пишет в консоль — её в движке нет.
+jsonLogic.rm_operation("log");
+export const ALLOWED_OPERATIONS = new Set([
+  "var", "==", "===", "!=", "!==", "!", "!!", "and", "or", "if", "?:",
+  "<", "<=", ">", ">=", "+", "-", "*", "/", "%", "min", "max",
+  "in", "cat", "substr", "merge", "all", "some", "none", "map", "filter", "reduce",
+  ...PLATFORM_OPERATIONS,
+]);
+
+export class LogicError extends Error {}
+
+/** Ошибки формы выражения: неизвестная операция, объект не из одного ключа. Путь — JSON-указатель внутри выражения. */
+export function logicProblems(rule: unknown, ptr = ""): { ptr: string; message: string }[] {
+  if (Array.isArray(rule)) return rule.flatMap((x, i) => logicProblems(x, `${ptr}/${i}`));
+  if (!rule || typeof rule !== "object") return [];
+  const keys = Object.keys(rule);
+  if (keys.length !== 1) return [{ ptr, message: `выражение должно быть объектом из одной операции, а в нём ключи: ${keys.join(", ") || "нет"}` }];
+  const op = keys[0];
+  if (!ALLOWED_OPERATIONS.has(op))
+    return [{ ptr: `${ptr}/${op}`, message: `неизвестная операция «${op}»; доступны: ${[...ALLOWED_OPERATIONS].join(", ")}` }];
+  return logicProblems((rule as Record<string, unknown>)[op], `${ptr}/${op}`);
+}
+
 export function evalLogic(rule: Json, data: unknown): unknown {
-  return jsonLogic.apply(rule as never, data as never);
+  const problems = logicProblems(rule);
+  if (problems.length) throw new LogicError(problems[0].message);
+  try {
+    return jsonLogic.apply(rule as never, data as never);
+  } catch (e) {
+    throw new LogicError(`выражение не вычислилось: ${(e as Error).message}`);
+  }
+}
+
+/** Все выражения {expr: …} внутри значения, с указателями. */
+export function exprsIn(v: unknown, ptr = ""): { rule: unknown; ptr: string }[] {
+  if (isExpr(v)) return [{ rule: v.expr, ptr: `${ptr}/expr` }];
+  if (Array.isArray(v)) return v.flatMap((x, i) => exprsIn(x, `${ptr}/${i}`));
+  if (v && typeof v === "object") return Object.entries(v).flatMap(([k, x]) => exprsIn(x, `${ptr}/${k}`));
+  return [];
 }
 
 export function getPath(obj: unknown, path: string): unknown {

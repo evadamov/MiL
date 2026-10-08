@@ -1,7 +1,7 @@
 export * from "./types.ts";
 export { compileScenario } from "./compiler/compile.ts";
 export { toJson } from "./compiler/json.ts";
-export { runPath, pathData, inputValue, isModelInput, evalCondition, EngineError, type Snapshot, type PathResult } from "./engine.ts";
+export { runPath, pathData, pathDataAt, inputValue, isModelInput, evalCondition, EngineError, type Snapshot, type PathResult } from "./engine.ts";
 export { validateScenario, type ValidationReport } from "./validate.ts";
 export { variantRows, variantValues, type VariantRow } from "./variants.ts";
 export { Ledger, ACCOUNTS, cashFlow, pnlLines, profit, natural, type JournalEntry, type Transaction } from "./ledger.ts";

@@ -3,8 +3,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { compileScenario } from "./compiler/compile.ts";
-import { EngineError, evalCondition, isModelInput, pathData, runPath, type PathResult } from "./engine.ts";
-import { collectRefs, evalLogic, getPath, isExpr, isRef, resolveValue } from "./logic.ts";
+import { EngineError, evalCondition, isModelInput, pathData, pathDataAt, runPath, type PathResult } from "./engine.ts";
+import { LogicError, collectRefs, evalLogic, exprsIn, getPath, isExpr, isRef, logicProblems, resolveValue } from "./logic.ts";
 import { MECHANICS, stageOf } from "./mechanics/index.ts";
 import type { Condition, Decisions, Diagnostic, Json, Pos, Scenario, StepDef } from "./types.ts";
 import { variantRows } from "./variants.ts";
@@ -23,8 +23,14 @@ export interface CheckReport {
 export interface ValidationReport {
   scenario?: Scenario;
   diagnostics: Diagnostic[];
+  /** Проверено путей. */
   paths: number;
+  /** Комбинации ходов перебраны не полностью: слишком много сочетаний. */
   sampled: boolean;
+  /** Всего допустимых сочетаний ходов; null — бесконечно (число без границ или шага). */
+  space: number | null;
+  /** Числовые ходы, перебранные по samples, а не по всем допустимым значениям. */
+  partialInputs: { key: string; samples: number; values: number | null }[];
   time?: { min: number; max: number; budget: number };
   lessons: LessonReport[];
   checks: CheckReport[];
@@ -39,7 +45,7 @@ type Ctx = "mechanic" | "analysis" | "after" | "legend";
 
 export function validateScenario(dir: string, root = process.cwd()): ValidationReport {
   const { scenario: sc, diagnostics } = compileScenario(dir, root);
-  const report: ValidationReport = { scenario: sc, diagnostics, paths: 0, sampled: false, lessons: [], checks: [] };
+  const report: ValidationReport = { scenario: sc, diagnostics, paths: 0, sampled: false, space: null, partialInputs: [], lessons: [], checks: [] };
   if (!sc || diagnostics.some((d) => d.severity === "error")) return report;
   const diag = (d: Omit<Diagnostic, "severity"> & { severity?: Diagnostic["severity"] }) =>
     diagnostics.push({ severity: d.code.startsWith("W") ? "warning" : d.code.startsWith("I") ? "info" : "error", ...d });
@@ -201,6 +207,17 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
     }
   }
 
+  // операции в выражениях — только из белого списка (scenario-format.md, п. 6.2)
+  const checkRules = (rules: { rule: unknown; ptr: string }[], prefix: string, fallback?: Pos, where?: string) => {
+    for (const r of rules) for (const pr of logicProblems(r.rule, r.ptr)) diag({ code: "E040", message: pr.message, pos: at(prefix + pr.ptr, fallback), where });
+  };
+  checkRules(exprsIn(sc.root.conditions, "/conditions"), "root");
+  for (const step of sc.steps) checkRules(exprsIn(step.block), `step:${step.id}`, step.pos, `step ${step.id}`);
+  for (const l of sc.lessons) {
+    if (l.assert !== undefined) checkRules([{ rule: l.assert, ptr: "/assert" }], `lesson:${l.id}`, l.pos, `lesson ${l.id}`);
+    checkRules(exprsIn(l.contrast?.where, "/contrast/where"), `lesson:${l.id}`, l.pos, `lesson ${l.id}`);
+  }
+
   // бюджет времени
   const tmin = sc.steps.reduce((s, x) => s + x.block.duration.min, 0);
   const tmax = sc.steps.reduce((s, x) => s + x.block.duration.max, 0);
@@ -214,6 +231,19 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
   for (const s of sc.steps)
     for (const inp of s.block.inputs ?? [])
       if (isModelInput(inp)) spaces.push([`${s.id}.${inp.id}`, inp.type === "choice" ? inp.options!.map((o) => o.value) : inp.samples!]);
+  // Покрытие: сколько всего допустимых сочетаний и какие числовые ходы перебираются лишь по samples.
+  let space: number | null = 1;
+  for (const s of sc.steps)
+    for (const inp of s.block.inputs ?? []) {
+      if (!isModelInput(inp)) continue;
+      let values: number | null;
+      if (inp.type === "choice") values = inp.options!.length;
+      else values = inp.min !== undefined && inp.max !== undefined && inp.step ? Math.floor((inp.max - inp.min) / inp.step + 1e-9) + 1 : null;
+      if (inp.type === "number" && (values === null || inp.samples!.length < values))
+        report.partialInputs.push({ key: `${s.id}.${inp.id}`, samples: inp.samples!.length, values });
+      space = space === null || values === null ? null : space * values;
+    }
+  report.space = space;
   const total = spaces.reduce((n, [, vs]) => n * vs.length, 1);
   let combos: Decisions[];
   if (total <= MAX_PATHS) combos = spaces.reduce<Decisions[]>((acc, [k, vs]) => acc.flatMap((a) => vs.map((x) => ({ ...a, [k]: x }))), [{}]);
@@ -257,11 +287,12 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
   };
   const ref = run(decisionsOf(sc.root.reference));
   if (ref) {
-    const refData = pathData(sc, ref);
     for (const step of sc.steps) {
       const ptr = `step:${step.id}`;
+      const idx = stepIndex.get(step.id)!;
       const snap = ref.at[step.id];
-      const after = { ...snap, ...refData, input: snap.input };
+      // Только пройденные шаги: в результатах — по этот шаг, во вводной — до него.
+      const after = { ...snap, ...pathDataAt(sc, ref, idx, true), input: snap.input };
       const tryResolve = (v: unknown, pointer: string) => {
         try {
           resolveValue(v as Json, after);
@@ -290,7 +321,7 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
         }
       });
       // подстановки: вводная и move — до хода, остальное — после
-      const before = { p: sc.root.params, at: Object.fromEntries(Object.entries(ref.at).filter(([k]) => stepIndex.get(k)! < stepIndex.get(step.id)!)), inputs: ref.inputs };
+      const before = pathDataAt(sc, ref, idx, false);
       const texts: { text: string; ctx: unknown; pos: Pos }[] = [
         { text: step.legend, ctx: before, pos: step.pos },
         ...step.slots.map((s) => ({ text: s.text, ctx: s.name === "move" ? before : after, pos: s.pos })),
@@ -316,6 +347,7 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
   for (const l of sc.lessons) {
     const rep: LessonReport = { id: l.id, kind: l.kind, passed: 0, total: 0 };
     report.lessons.push(rep);
+    try {
     const pos = at(`lesson:${l.id}/assert`, l.pos);
     // Переменные условия вывода и их значения на упавшем пути — для отчёта.
     const vars = [...new Set(collectRefs({ expr: l.assert ?? null }))].filter((v) => !v.startsWith("rows"));
@@ -370,7 +402,13 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
         else fail([`прочие ходы: ${g}`]);
       }
     }
-    if (rep.total === 0) diag({ code: "W070", message: `вывод ${l.id}: ни одной подходящей пары путей`, pos: l.pos });
+    } catch (e) {
+      if (!(e instanceof LogicError)) throw e;
+      diag({ code: "E070", message: `вывод ${l.id} не вычислился: ${e.message}`, pos: at(`lesson:${l.id}/assert`, l.pos), where: `lesson ${l.id}` });
+      continue;
+    }
+    // Заявленный вывод, который не проверился ни на одном пути, — ошибка, а не «зелёный».
+    if (rep.total === 0) diag({ code: "E070", message: `вывод ${l.id} не проверен: нет ни одного подходящего пути или пары путей`, pos: l.pos, where: `lesson ${l.id}` });
   }
 
   // ---------- проверки ----------

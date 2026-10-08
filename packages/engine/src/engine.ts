@@ -3,7 +3,7 @@
 // docs/engine.md, п. 2–4; docs/mechanics.md, п. 2–3.
 import { Ajv, type ValidateFunction } from "ajv";
 import { Ledger, LedgerError, balanceCheck, cashBySource, pnlLines, profit, type JournalEntry, type Transaction } from "./ledger.ts";
-import { RefError, evalLogic, resolveValue, roundHalfUp } from "./logic.ts";
+import { LogicError, RefError, evalLogic, resolveValue, roundHalfUp } from "./logic.ts";
 import { MECHANICS, STAGE_ORDER, demandOf, stageOf, type Allocation, type Segment, type TradeContext } from "./mechanics/index.ts";
 import type { Condition, Decisions, InputDef, Json, Scenario, StepDef } from "./types.ts";
 
@@ -151,6 +151,12 @@ export function runPath(sc: Scenario, decisions: Decisions): PathResult {
       demandFixed = true;
       if (trade.queue.length === 0 && trade.traffic !== undefined && trade.conversion !== undefined)
         trade.queue.push({ id: "all", size: roundHalfUp(trade.traffic * trade.conversion), pay: "cash" });
+      // Продажи распределяются по id сегмента: повтор id удвоил бы выручку.
+      const seen = new Set<string>();
+      for (const seg of trade.queue) {
+        if (seen.has(seg.id)) throw new EngineError("E031", `повтор id сегмента «${seg.id}» в очереди шага: id сегментов должны быть уникальны`, sid);
+        seen.add(seg.id);
+      }
     };
     const settle = () => {
       if (settled) return;
@@ -193,6 +199,7 @@ export function runPath(sc: Scenario, decisions: Decisions): PathResult {
         params = resolveValue((call.params ?? {}) as Json, d) as Record<string, unknown>;
       } catch (e) {
         if (e instanceof RefError) throw new EngineError("E041", e.message, sid, `${pointer}/params`);
+        if (e instanceof LogicError) throw new EngineError("E040", e.message, sid, `${pointer}/params`);
         throw e;
       }
       const validate = paramsValidator(call.use);
@@ -283,4 +290,15 @@ export function runPath(sc: Scenario, decisions: Decisions): PathResult {
 /** Данные пути для выражений уроков, проверок, панелей: at, inputs, p. */
 export function pathData(sc: Scenario, r: PathResult): Record<string, unknown> {
   return { at: r.at, inputs: r.inputs, p: sc.root.params };
+}
+
+/**
+ * Данные пути, видимые на шаге i: снимки и ходы только пройденных шагов.
+ * inclusive — включая сам шаг i (после закрытия приёма), иначе только до него (вводная).
+ * Без этого вводная или результаты могли бы показать будущий ход.
+ */
+export function pathDataAt(sc: Scenario, r: PathResult, i: number, inclusive: boolean): Record<string, unknown> {
+  const ids = sc.steps.slice(0, inclusive ? i + 1 : i).map((s) => s.id);
+  const pick = <T>(o: Record<string, T>) => Object.fromEntries(ids.filter((id) => id in o).map((id) => [id, o[id]]));
+  return { at: pick(r.at), inputs: pick(r.inputs), p: sc.root.params };
 }

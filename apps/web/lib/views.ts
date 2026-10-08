@@ -5,7 +5,7 @@ import {
   cashFlow,
   evalCondition,
   isModelInput,
-  pathData,
+  pathDataAt,
   pnlLines,
   profit,
   resolveValue,
@@ -61,13 +61,12 @@ const okRuns = (doc: SessionDoc, c: Computed) =>
 
 /** До хода: параметры, прошлые раскрытые шаги, ходы. */
 function beforeCtx(doc: SessionDoc, r: PathResult, i: number) {
-  const at = Object.fromEntries(doc.scenario.steps.slice(0, i).map((s) => [s.id, r.at[s.id]]));
-  return { p: doc.scenario.root.params, at, inputs: r.inputs };
+  return pathDataAt(doc.scenario, r, i, false);
 }
-/** После раскрытия: плюс снимок шага. */
+/** После раскрытия: плюс снимок шага; будущих шагов и ходов не видно. */
 function afterCtx(doc: SessionDoc, r: PathResult, i: number) {
   const snap = r.at[stepAt(doc, i).id];
-  return { ...snap, ...pathData(doc.scenario, r), input: snap.input };
+  return { ...snap, ...pathDataAt(doc.scenario, r, i, true), input: snap.input };
 }
 
 function slotText(doc: SessionDoc, step: StepDef, name: string, ctx: unknown | null): string | null {

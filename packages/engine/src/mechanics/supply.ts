@@ -95,6 +95,10 @@ export const inventory: Mechanic<
     ],
   },
   step(ctx, p, shelf = { units: 0, unit_cost: 0 }) {
+    // v1: у одного запаса одна себестоимость единицы. Иначе стоимость остатка
+    // на счёте inventory разошлась бы с числом единиц × их ценой.
+    if ((p.mode === "stock" || p.mode === "sell") && shelf.units > 0 && p.unit_cost !== shelf.unit_cost)
+      throw new Error(`unit_cost ${p.unit_cost} не совпадает с себестоимостью запаса ${shelf.unit_cost}: у одного запаса она одна`);
     if (p.mode === "stock") {
       const value = p.units * p.unit_cost;
       return {

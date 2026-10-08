@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { compileScenario } from "../src/compiler/compile.ts";
 import { ACCOUNTS } from "../src/ledger.ts";
+import { ALLOWED_OPERATIONS } from "../src/logic.ts";
 import { MECHANICS } from "../src/mechanics/index.ts";
 import { REPO } from "./helpers.ts";
 
@@ -41,11 +42,12 @@ describe("движок не знает сценариев", () => {
       }
     for (const k of paramKeys(sc.root.params)) ids.add(k);
   }
-  // Словарь платформы — счета, механики и имена их параметров — не знание сценария,
+  // Словарь платформы — счета, механики, их параметры, операции выражений — не знание сценария,
   // даже если сценарий назвал свой параметр так же (например, park.loan).
   const generic = new Set([
     ...Object.keys(ACCOUNTS),
     ...Object.keys(MECHANICS),
+    ...ALLOWED_OPERATIONS,
     ...Object.values(MECHANICS).flatMap((m) => [...paramKeys(m.paramsSchema)]),
   ]);
   const needles = [...ids].filter((x) => !generic.has(x) && x.length > 2);
