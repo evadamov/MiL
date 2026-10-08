@@ -1,0 +1,25 @@
+{
+  "name": "@mil/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": { "sim": "src/cli.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "sim": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "json-logic-js": "^2.0.5",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/json-logic-js": "^2.0.8",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

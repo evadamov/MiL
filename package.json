@@ -1,0 +1,10 @@
+{
+  "name": "mil",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "npm run test -w @mil/engine",
+    "typecheck": "npm run typecheck -w @mil/engine",
+    "sim": "npm run sim -w @mil/engine --"
+  }
+}

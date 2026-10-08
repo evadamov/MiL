@@ -196,7 +196,7 @@ variants:
 несколько стаканов, чем заварить целый термос впрок: недополученная
 выручка с трёх стаканов меньше, чем заварка двадцати.
 
-## step summary · Итоги выходных
+## step wrapup · Итоги выходных
 
 Три дня позади. Сколько заработали и сколько вылили?
 
@@ -212,8 +212,8 @@ results:
           - {label: Растяжка, value: $inputs.sat.banner}
           - {label: Сб, value: $inputs.sat.thermoses}
           - {label: Вс, value: $inputs.sun.thermoses}
-          - {label: Прибыль, value: $at.summary.pl.cumulative, format: money}
-          - {label: Деньги, value: $at.summary.cash, format: money}
+          - {label: Прибыль, value: $at.wrapup.pl.cumulative, format: money}
+          - {label: Деньги, value: $at.wrapup.cash, format: money}
     - takeaways
 ```
 

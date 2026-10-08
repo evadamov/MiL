@@ -24,12 +24,14 @@
 scenarios/
   <scenario-id>/
     scenario.md        входной файл: фронтматтер, корневой блок, справка, выводы, проверки
+    scenario.json      или вместо scenario.md — тот же сценарий в JSON (п. 13)
     <любое>.md         подключается, только если указан в include
     assets/            картинки слайдов
     canon/             исходные материалы; приложение их не читает
 ```
 
-Сценарием считается каталог, в котором есть `scenario.md`. Другие `.md`
+Сценарием считается каталог, в котором есть `scenario.md` или
+`scenario.json` — ровно один из них, оба сразу — ошибка `E001`. Другие `.md`
 компилируются только через `include`, поэтому в каталоге можно держать
 черновики и канон.
 
@@ -579,3 +581,52 @@ scenarios/lemonade/scenario.md:31:1  E070  lesson revenue_is_not_cash › assert
 | Случайные события | раздел `# events`: шаги, вероятность, эффекты на торговый контекст |
 | Свои счета | `accounts: {<id>: {type, label}}` |
 | Варианты одного сценария | несколько `scenario.md` с общими `include` и своими `params` |
+
+---
+
+## 13. `scenario.json` — тот же сценарий в JSON
+
+Второй вход для тех, кому удобнее выгружать JSON, — например, для ИИ.
+Структура та же, что получается из Markdown, а проверки, схемы и коды
+ошибок общие. Ошибки тоже указывают на строку и столбец в `scenario.json`.
+
+```json
+{
+  "meta":        { "id": "rink_tea", "version": 1, "title": "…", "locale": "ru",
+                   "duration_min": 30, "format": 1, "library": 1 },
+  "description": "Текст для каталога ведущего",
+  "root":        { "currency": {"label": "₽"}, "params": {…}, "reference": "reference_team" },
+  "phases":      [ { "id": "weekend", "title": "Выходные", "text": "…", "slots": [] } ],
+  "steps": [
+    {
+      "id": "fri", "title": "Пятница", "phase": "weekend",
+      "legend": "Текст вводной",
+      "slots": [ { "name": "move", "text": "Задание к ходу" },
+                 { "name": "results", "cond": "jug_bought", "text": "…" } ],
+      "duration": {"min": 6, "max": 7},
+      "inputs": […], "mechanics": […], "variants": […]
+    }
+  ],
+  "pages":   [ { "id": "yard", "title": "…", "text": "…", "from": "d1" } ],
+  "lessons": [ { "id": "…", "title": "…", "text": "…", "kind": "contrast", "contrast": {…}, "assert": {…} } ],
+  "checks":  [ { "id": "reference_team", "title": "…", "decisions": {…}, "expect": {…} } ]
+}
+```
+
+Соответствие Markdown:
+
+| Markdown | JSON |
+|---|---|
+| фронтматтер | `meta` (без `include`: JSON — всегда один файл) |
+| текст до корневого блока | `description` |
+| корневой блок `sim` | `root` |
+| `# phase id · название` и её текст, слоты | `phases[]`: `id`, `title`, `text`, `slots` |
+| `## step id · название` | `steps[]`: `id`, `title`, `phase` |
+| текст шага до первого `###` | `steps[].legend` |
+| `### имя (if условие)` | `steps[].slots[]`: `name`, `cond`, `text` |
+| блок `sim` шага | поля шага рядом: `duration`, `inputs`, `mechanics`, … |
+| `## page`, `## lesson`, `## check` | `pages[]`, `lessons[]`, `checks[]`; поля блока рядом с `id`, `title`, `text` |
+
+`sim export-json scenarios/<id>` печатает любой сценарий в этом виде —
+готовый образец для ИИ. Тест движка проверяет, что Markdown и его выгрузка в
+JSON дают один и тот же сценарий.

@@ -1,0 +1,89 @@
+// Значения и выражения сценария: ссылки "$…", {expr: JSONLogic}, три операции
+// платформы. docs/scenario-format.md, п. 6.
+import jsonLogic from "json-logic-js";
+import type { Json } from "./types.ts";
+
+/** Округление «половина вверх». Эпсилон гасит ошибки двоичной арифметики: 37.5 → 38. */
+export function roundHalfUp(x: number): number {
+  return Math.floor(x + 0.5 + 1e-9);
+}
+
+type Row = { value: unknown } & Record<string, unknown>;
+
+function arg(rows: Row[], field: string, better: (a: number, b: number) => boolean): unknown {
+  let best: { v: number; value: unknown } | null = null;
+  for (const r of rows) {
+    const v = getPath(r, field);
+    if (typeof v !== "number") continue;
+    if (best === null || better(v, best.v)) best = { v, value: r.value };
+  }
+  return best?.value ?? null;
+}
+
+jsonLogic.add_operation("round", (x: number) => roundHalfUp(x));
+jsonLogic.add_operation("argmax", (rows: Row[], field: string) => arg(rows, field, (a, b) => a > b));
+jsonLogic.add_operation("argmin", (rows: Row[], field: string) => arg(rows, field, (a, b) => a < b));
+
+export const PLATFORM_OPERATIONS = ["round", "argmax", "argmin"];
+
+export function evalLogic(rule: Json, data: unknown): unknown {
+  return jsonLogic.apply(rule as never, data as never);
+}
+
+export function getPath(obj: unknown, path: string): unknown {
+  let cur: unknown = obj;
+  for (const key of path.split(".")) {
+    if (cur === null || cur === undefined || typeof cur !== "object") return undefined;
+    cur = (cur as Record<string, unknown>)[key];
+  }
+  return cur;
+}
+
+export class RefError extends Error {
+  constructor(public ref: string) {
+    super(`ссылка ${ref} не найдена`);
+  }
+}
+
+export function isRef(v: unknown): v is string {
+  return typeof v === "string" && v.startsWith("$") && !v.startsWith("$$");
+}
+
+export function isExpr(v: unknown): v is { expr: Json } {
+  return !!v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 1 && "expr" in v;
+}
+
+/** Подставляет ссылки и выражения во всём значении. */
+export function resolveValue(v: Json | undefined, data: unknown): unknown {
+  if (v === undefined) return undefined;
+  if (typeof v === "string" && v.startsWith("$$")) return v.slice(1);
+  if (isRef(v)) {
+    const got = getPath(data, v.slice(1));
+    if (got === undefined) throw new RefError(v);
+    return got;
+  }
+  if (Array.isArray(v)) return v.map((x) => resolveValue(x, data));
+  if (isExpr(v)) return evalLogic(v.expr, data);
+  if (v && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v)) out[k] = resolveValue(x, data);
+    return out;
+  }
+  return v;
+}
+
+/** Все пути переменных в значении: ссылки "$a.b" и {var: "a.b"} внутри expr. */
+export function collectRefs(v: unknown, out: string[] = [], inExpr = false): string[] {
+  if (isRef(v) && !inExpr) out.push(v.slice(1));
+  else if (Array.isArray(v)) v.forEach((x) => collectRefs(x, out, inExpr));
+  else if (v && typeof v === "object") {
+    if (inExpr && "var" in v) {
+      const target = (v as { var: unknown }).var;
+      const path = Array.isArray(target) ? target[0] : target;
+      if (typeof path === "string" && path !== "") out.push(path);
+    }
+    if (isExpr(v)) collectRefs(v.expr, out, true);
+    else for (const x of Object.values(v)) collectRefs(x, out, inExpr);
+  }
+  return out;
+}

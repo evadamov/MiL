@@ -1,0 +1,21 @@
+# MiL — приложение для бизнес-воркшопов
+
+Ведущий показывает вводные и результаты ходов, команды делают ходы со своих
+устройств, движок считает. Сценарий воркшопа — Markdown или JSON в
+`scenarios/`, код его не знает.
+
+- [docs/spec.md](docs/spec.md) — приложение
+- [docs/engine.md](docs/engine.md), [docs/mechanics.md](docs/mechanics.md) — движок
+- [docs/scenario-format.md](docs/scenario-format.md) — формат сценария
+- [scenarios/](scenarios/) — «Малыш и лимонад», «Чай на катке»
+
+## Команды
+
+```bash
+npm install
+npm test                                   # тесты движка и всех сценариев
+npm run sim -- validate                    # проверка всех сценариев, как при сборке
+npm run sim -- validate scenarios/lemonade # один сценарий
+npm run sim -- play scenarios/lemonade d2.jug=buy d14_order.prep=19
+npm run sim -- export-json scenarios/rink_tea > scenario.json
+```
