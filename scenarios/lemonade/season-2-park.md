@@ -21,6 +21,7 @@
 
 ```sim
 duration: {min: 3, max: 3}
+legend: {image: assets/d7.png, layout: below}
 inputs:
   - id: runway
     type: quiz
@@ -53,6 +54,7 @@ results:
 
 ```sim
 duration: {min: 4, max: 5}
+legend: {image: assets/d8.png, layout: below}
 inputs:
   - id: contribution
     type: quiz
@@ -107,6 +109,7 @@ trainer: {protected: true}
 
 ```sim
 duration: {min: 2, max: 3}
+legend: {image: assets/d9.png, layout: below}
 inputs:
   - id: cola_price
     type: choice
@@ -206,6 +209,7 @@ variants:
 
 ```sim
 duration: {min: 3, max: 4}
+legend: {image: assets/d11.png, layout: below}
 inputs:
   - id: lemon_price
     type: choice
@@ -235,6 +239,7 @@ trainer: {checkpoint: "1:00"}
 
 ```sim
 duration: {min: 2, max: 3}
+legend: {image: assets/d12.png, layout: below}
 mechanics:
   - use: funnel
     params: {traffic: $p.park.traffic.fri}
@@ -264,6 +269,7 @@ variants:
 
 ```sim
 duration: {min: 3, max: 3}
+legend: {image: assets/d13.png, layout: below}
 inputs:
   - id: flyers
     type: choice
@@ -324,6 +330,7 @@ variants:
 
 ```sim
 duration: {min: 2, max: 2}
+legend: {image: assets/d14.png, layout: below}
 mechanics:
   - use: funnel
     params: {traffic: $p.park.traffic.sun, conversion: $p.park.lemon_conversion, price: $p.park.lemon_price}
@@ -348,6 +355,7 @@ mechanics:
 
 ```sim
 duration: {min: 2, max: 2}
+legend: {image: assets/d14_order.png, layout: below}
 inputs:
   - id: prep
     type: number
@@ -372,6 +380,7 @@ trainer: {checkpoint: "1:15", protected: true}
 
 ```sim
 duration: {min: 3, max: 4}
+legend: {image: assets/d15.png, layout: below}
 mechanics:
   - use: funnel
     params: {traffic: $p.park.traffic.mon, conversion: $p.park.monday_conversion, price: $p.park.lemon_price}
@@ -414,6 +423,7 @@ trainer: {checkpoint: "1:20", protected: true}
 
 ```sim
 duration: {min: 2, max: 2}
+legend: {image: assets/d12.png, layout: below}
 inputs:
   - id: forecast_daily
     type: forecast
@@ -440,6 +450,7 @@ mechanics:
 
 ```sim
 duration: {min: 2, max: 2}
+legend: {image: assets/d16_goal.png, layout: below}
 inputs:
   - id: forecast_days
     type: forecast
@@ -507,6 +518,7 @@ trainer: {checkpoint: "1:26"}
 ```sim
 duration: {min: 11, max: 13}
 type: summary
+legend: {image: assets/d6.png, layout: below}
 results:
   panels:
     - {statement: {kind: pnl, scope: game}}

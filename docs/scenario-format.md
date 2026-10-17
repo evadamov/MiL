@@ -651,6 +651,7 @@ scenarios/lemonade/scenario.md:31:1  E070  lesson revenue_is_not_cash › assert
     {
       "id": "fri", "title": "Пятница", "phase": "weekend",
       "legend": "Текст вводной",
+      "visual": {"image": "assets/fri.png", "layout": "below"},
       "slots": [ { "name": "move", "text": "Задание к ходу" },
                  { "name": "results", "cond": "jug_bought", "text": "…" } ],
       "duration": {"min": 6, "max": 7},
@@ -673,6 +674,7 @@ scenarios/lemonade/scenario.md:31:1  E070  lesson revenue_is_not_cash › assert
 | `# phase id · название` и её текст, слоты | `phases[]`: `id`, `title`, `text`, `slots` |
 | `## step id · название` | `steps[]`: `id`, `title`, `phase` |
 | текст шага до первого `###` | `steps[].legend` |
+| `legend` в блоке `sim` (картинка и раскладка) | `steps[].visual` |
 | `### имя (if условие)` | `steps[].slots[]`: `name`, `cond`, `text` |
 | блок `sim` шага | поля шага рядом: `duration`, `inputs`, `mechanics`, … |
 | `## page`, `## lesson`, `## check` | `pages[]`, `lessons[]`, `checks[]`; поля блока рядом с `id`, `title`, `text` |
