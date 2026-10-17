@@ -46,10 +46,17 @@ export const rootSchema = {
   additionalProperties: false,
   properties: {
     currency: { type: "object", required: ["label"], additionalProperties: false, properties: { label: str, short: str } },
+    theme: { enum: ["light", "dark"] },
+    icons: { type: "object", additionalProperties: false, properties: { people: str, unit: str } },
     params: { type: "object" },
     accounts: {
       type: "object",
-      additionalProperties: { type: "object", required: ["label"], additionalProperties: false, properties: { label: str } },
+      additionalProperties: {
+        type: "object",
+        required: ["label"],
+        additionalProperties: false,
+        properties: { label: str, by_phase: { type: "object", additionalProperties: str } },
+      },
     },
     sources: { type: "object", additionalProperties: str },
     conditions: { type: "object", additionalProperties: condition },
@@ -127,7 +134,7 @@ export const stepSchema = {
     legend: {
       type: "object",
       additionalProperties: false,
-      properties: { image: { type: "string", pattern: "^assets/[^:]+$" }, layout: { enum: ["side", "full", "text"] } },
+      properties: { image: { type: "string", pattern: "^assets/[^:]+$" }, layout: { enum: ["side", "below", "full", "text"] } },
     },
     inputs: { type: "array", minItems: 1, items: input },
     mechanics: {

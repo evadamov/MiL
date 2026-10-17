@@ -61,7 +61,7 @@ export interface VariantDef {
 export interface StepBlock {
   duration: { min: number; max: number };
   type?: "summary";
-  legend?: { image?: string; layout?: "side" | "full" | "text" };
+  legend?: { image?: string; layout?: "side" | "below" | "full" | "text" };
   inputs?: InputDef[];
   mechanics?: MechanicCall[];
   results?: { panels: Json[] };
@@ -139,8 +139,13 @@ export interface CheckDef {
 
 export interface RootBlock {
   currency: { label: string; short?: string };
+  /** Тема экранов игры; без неё — как в системе устройства. */
+  theme?: "light" | "dark";
+  /** Значки в таблицах: people — у трафика и спроса, unit — у проданного и списанного. */
+  icons?: { people?: string; unit?: string };
   params: JsonObject;
-  accounts?: Record<string, { label: string }>;
+  /** Подписи счетов; by_phase — своя подпись в фазе. Счета с одной подписью на слайде складываются в одну строку. */
+  accounts?: Record<string, { label: string; by_phase?: Record<string, string> }>;
   sources?: Record<string, string>;
   conditions?: Record<string, Condition>;
   reference: string;

@@ -19,7 +19,7 @@ import {
   type StepDef,
 } from "@mil/engine";
 import { PHASE_LABELS, type Block, type ControlView, type Field, type Header, type ScreenView, type TeamView } from "./blocks";
-import { accountLabel, fmt, label, md, sourceLabel } from "./render";
+import { accountLabel, fmt, label, md, sourceLabel, withIcon } from "./render";
 import { decisionsOf, isClosed, isRevealed, phasesOf, showablePhases, stepAt, type Phase, type SessionDoc, type Team } from "./session";
 
 // ---------- расчёт путей, кэш по версии документа ----------
@@ -94,6 +94,7 @@ function header(doc: SessionDoc, i: number, phase: Phase): Header {
     stepNo: i + 1,
     steps: doc.scenario.steps.length,
     stage: PHASE_LABELS[phase],
+    theme: doc.scenario.root.theme,
   };
 }
 
@@ -101,45 +102,61 @@ function header(doc: SessionDoc, i: number, phase: Phase): Header {
 
 type Mode = { kind: "screen" } | { kind: "team"; team: Team; r: PathResult };
 
-function factsRows(sc: Scenario, s: Snapshot): [string, string][] {
+/** Строки P&L: выручка, затем расходы; счета с одинаковой подписью — одной строкой. */
+function pnlRows(sc: Scenario, lines: Record<string, number>, phase: string): [string, string][] {
+  const sums = new Map<string, number>();
+  const ordered = Object.entries(lines).sort(([a], [b]) => (ACCOUNTS[a] === "income" ? 0 : 1) - (ACCOUNTS[b] === "income" ? 0 : 1));
+  for (const [a, v] of ordered) {
+    if (!v && a !== "revenue") continue;
+    const l = accountLabel(sc, a, phase);
+    sums.set(l, (sums.get(l) ?? 0) + (ACCOUNTS[a] === "income" ? v : -v));
+  }
+  return [...sums].map(([l, v]) => [l, fmt(sc, v, "money")]);
+}
+
+function factsRowsOf(sc: Scenario, s: Snapshot, phase: string): [string, string][] {
   const m = s.metrics as Record<string, number | undefined>;
   const rows: [string, string][] = [];
   if (m.traffic !== undefined) {
-    rows.push(["Трафик", fmt(sc, m.traffic, "int")]);
-    if (m.demand !== undefined) rows.push(["Хотели купить", fmt(sc, m.demand, "int")]);
-    if (m.sold !== undefined) rows.push(["Продано", fmt(sc, m.sold, "int") + (m.sold_credit ? ` (в долг ${m.sold_credit})` : "")]);
-    if (m.waste_units) rows.push(["Списано, ед.", fmt(sc, m.waste_units, "int")]);
+    rows.push(["Трафик", withIcon(sc, "people", fmt(sc, m.traffic, "int"))]);
+    if (m.demand !== undefined) rows.push(["Хотели купить", withIcon(sc, "people", fmt(sc, m.demand, "int"))]);
+    if (m.sold !== undefined) rows.push(["Продано", withIcon(sc, "unit", fmt(sc, m.sold, "int")) + (m.sold_credit ? ` (в долг ${m.sold_credit})` : "")]);
+    if (m.waste_units) rows.push(["Списано", withIcon(sc, "unit", fmt(sc, m.waste_units, "int"))]);
     if (m.conversion !== undefined) rows.push(["Конверсия", fmt(sc, m.conversion, "percent1")]);
   }
   const lines = s.pl.lines;
-  if ("revenue" in lines) rows.push([accountLabel(sc, "revenue"), fmt(sc, lines.revenue, "money")]);
-  for (const [a, v] of Object.entries(lines)) if (a !== "revenue" && v) rows.push([accountLabel(sc, a), fmt(sc, -v, "money")]);
+  rows.push(...pnlRows(sc, lines, phase));
   if (Object.keys(lines).length) rows.push(["Прибыль шага", fmt(sc, s.pl.day, "money")]);
+  // Долги покупателей: пока они есть и в день возврата.
+  const debt = s.balance.receivables;
+  if (debt !== undefined && (debt !== 0 || s.cf.collections)) rows.push([accountLabel(sc, "receivables", phase), fmt(sc, debt, "money")]);
   for (const [src, v] of Object.entries(s.cf)) if (v && !Object.keys(lines).length) rows.push([sourceLabel(sc, src), fmt(sc, v, "money")]);
   rows.push(["Деньги на конец", fmt(sc, s.cash, "money")]);
   return rows;
 }
 
+/**
+ * Показатели по командам. Одна колонка — столбцом «показатель | значение».
+ * Несколько команд — строка на команду, показатели в колонках: таблица растёт
+ * вниз с числом команд и не уезжает за правый край проектора.
+ */
 function columnsTable(title: string | undefined, cols: { name: string; rows: [string, string][] }[]): Block {
   const labels: string[] = [];
   for (const c of cols) for (const [l] of c.rows) if (!labels.includes(l)) labels.push(l);
-  return {
-    type: "table",
-    title,
-    head: ["", ...cols.map((c) => c.name)],
-    rows: labels.map((l) => [l, ...cols.map((c) => c.rows.find(([x]) => x === l)?.[1] ?? "—")]),
-  };
+  const cell = (c: (typeof cols)[number], l: string) => c.rows.find(([x]) => x === l)?.[1] ?? "—";
+  if (cols.length === 1) return { type: "table", title, head: ["", cols[0].name], rows: labels.map((l) => [l, cell(cols[0], l)]) };
+  return { type: "table", title, wide: true, head: ["Команда", ...labels], rows: cols.map((c) => [c.name, ...labels.map((l) => cell(c, l))]) };
 }
 
 function factsBlock(doc: SessionDoc, c: Computed, i: number, mode: Mode): Block {
   const sc = doc.scenario;
-  const id = stepAt(doc, i).id;
+  const { id, phase } = stepAt(doc, i);
+  const factsRows = (sc: Scenario, s: Snapshot) => factsRowsOf(sc, s, phase);
   if (mode.kind === "team") return { type: "table", title: "Итоги дня", head: ["", mode.team.name], rows: factsRows(sc, mode.r.at[id]) };
   const runs = okRuns(doc, c);
   if (!runs.length) return { type: "table", title: "Итоги дня (эталон)", head: ["", "Эталон"], rows: factsRows(sc, c.ref.at[id]) };
-  const cols = runs.map(({ team, r }) => ({ name: team.name, rows: factsRows(sc, r.at[id]) }));
-  const same = cols.every((x) => JSON.stringify(x.rows) === JSON.stringify(cols[0].rows));
-  return columnsTable("Итоги дня", same ? [{ name: "Все команды", rows: cols[0].rows }] : cols);
+  // Колонка на каждую команду, даже если цифры совпали: зал видит себя на проекторе.
+  return columnsTable("Итоги дня", runs.map(({ team, r }) => ({ name: team.name, rows: factsRows(sc, r.at[id]) })));
 }
 
 function moveOf(doc: SessionDoc, team: Team, step: StepDef, inp: InputDef) {
@@ -287,8 +304,7 @@ function statementBlock(doc: SessionDoc, r: PathResult, i: number, kind: "pnl" |
   const scopeName = scope === "game" ? "за игру" : scope === "phase" ? `за фазу «${sc.phases.find((p) => p.id === step.phase)?.title ?? ""}»` : "за шаг";
   if (kind === "pnl") {
     const lines = pnlLines(entries);
-    const ordered = Object.entries(lines).sort(([a], [b]) => (ACCOUNTS[a] === "income" ? 0 : 1) - (ACCOUNTS[b] === "income" ? 0 : 1));
-    const rows = ordered.map(([a, v]) => [accountLabel(sc, a), fmt(sc, ACCOUNTS[a] === "income" ? v : -v, "money")]);
+    const rows: string[][] = pnlRows(sc, lines, step.phase);
     rows.push(["Прибыль", fmt(sc, profit(lines), "money")]);
     return { type: "table", title: `P&L ${scopeName} · ${who}`, head: ["", ""], rows };
   }
@@ -304,7 +320,7 @@ function statementBlock(doc: SessionDoc, r: PathResult, i: number, kind: "pnl" |
   const snap = r.at[step.id];
   const rows = Object.entries(snap.balance)
     .filter(([a, v]) => v && ["asset", "liability", "equity"].includes(ACCOUNTS[a]))
-    .map(([a, v]) => [accountLabel(sc, a), fmt(sc, v, "money")]);
+    .map(([a, v]) => [accountLabel(sc, a, step.phase), fmt(sc, v, "money")]);
   rows.push(["Накопленная прибыль", fmt(sc, snap.pl.cumulative, "money")]);
   rows.push(["Проверка баланса", fmt(sc, snap.check.balance)]);
   return { type: "table", title: `Баланс на конец · ${who}`, head: ["", ""], rows };
@@ -507,7 +523,7 @@ export function teamView(doc: SessionDoc, team: Team): TeamView {
     if (!isRevealed(doc, k) || !s.block.mechanics?.length) return;
     const snap = r.at[s.id];
     const m = snap.metrics as Record<string, number | undefined>;
-    dayRows.push([s.title, fmt(sc, m.traffic, "int"), fmt(sc, m.sold, "int"), fmt(sc, snap.pl.day, "money"), fmt(sc, snap.cash, "money")]);
+    dayRows.push([s.title, withIcon(sc, "people", fmt(sc, m.traffic, "int")), withIcon(sc, "unit", fmt(sc, m.sold, "int")), fmt(sc, snap.pl.day, "money"), fmt(sc, snap.cash, "money")]);
   });
   const days: Block | null = dayRows.length ? { type: "table", head: ["Шаг", "Трафик", "Продано", "Прибыль", "Деньги"], rows: dayRows } : null;
 

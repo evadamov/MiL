@@ -31,7 +31,7 @@ trainer: {checkpoint: "0:10"}
 
 Утром мама готовит кувшин — {{p.yard.jug_cups}} стаканов. Ингредиенты на
 стакан стоят {{p.yard.cup_cost}} монеты, стакан продаётся за
-{{p.yard.price}}. Что не продастся, вечером выльют.
+{{p.yard.price}}. Что не продастся, пропадёт.
 
 ```sim
 duration: {min: 3, max: 4}
@@ -39,13 +39,14 @@ mechanics:
   - use: funnel
     params: {traffic: $p.yard.traffic, conversion: $p.yard.conversion, price: $p.yard.price}
   - use: batch_production
-    params: {quantity: $p.yard.jug_cups, unit_cost: $p.yard.cup_cost, source: ingredients}
+    params: {quantity: $p.yard.jug_cups, own_use: $p.yard.own_cups_mon, unit_cost: $p.yard.cup_cost, source: ingredients}
 ```
 
 ### results
 
-Мимо прошло {{metrics.traffic}} человек, купили {{metrics.sold}}. Один стакан
-остался — его вылили, но за ингредиенты уже заплачено.
+Мимо прошло {{metrics.traffic}} человек, купили {{metrics.sold}} — весь кувшин:
+{{p.yard.own_cups_mon}} стакан Малыш выпил сам. За ингредиенты заплачено за все
+{{p.yard.jug_cups}}.
 
 ### trainer
 

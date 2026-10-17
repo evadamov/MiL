@@ -5,6 +5,7 @@
   --muted: #6b6f76;
   --line: #e2e0d9;
   --accent: #1f6f5c;
+  --accent-fill: #1f6f5c;          /* фон заливных кнопок; текст на нём белый */
   --accent-ink: #ffffff;
   --accent-soft: #e3f0ec;
   --warn: #9a5b00;
@@ -14,21 +15,38 @@
   --radius: 10px;
   --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
+/* Тема: theme в сценарии (light | dark); без неё — как в системе. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #15171a;
     --surface: #1e2125;
     --ink: #eceae4;
     --muted: #9aa0a8;
     --line: #2e3238;
     --accent: #5fc2a6;
-    --accent-ink: #0d1f1a;
+    --accent-fill: #2f8f76;
+    --accent-ink: #ffffff;
     --accent-soft: #1c332d;
     --warn: #e2a64b;
     --warn-soft: #33281a;
     --bad: #ef8a80;
     --bad-soft: #3a2220;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #15171a;
+  --surface: #1e2125;
+  --ink: #eceae4;
+  --muted: #9aa0a8;
+  --line: #2e3238;
+  --accent: #5fc2a6;
+  --accent-fill: #2f8f76;
+  --accent-ink: #ffffff;
+  --accent-soft: #1c332d;
+  --warn: #e2a64b;
+  --warn-soft: #33281a;
+  --bad: #ef8a80;
+  --bad-soft: #3a2220;
 }
 
 * { box-sizing: border-box; }
@@ -46,7 +64,7 @@ h1 { font-size: 1.6rem; margin: 0 0 4px; }
 
 .btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 9px 16px; cursor: pointer; }
 .btn:hover { border-color: var(--muted); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.primary { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--accent-ink); font-weight: 600; }
 .btn.small { padding: 4px 10px; font-size: 0.85rem; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .input { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 9px 12px; width: 100%; }
@@ -77,24 +95,33 @@ tr.hl td { background: var(--accent-soft); font-weight: 600; }
 .counter { font-size: 1.4rem; font-weight: 600; }
 .form label { display: block; font-weight: 600; margin: 14px 0 6px; }
 .options { display: flex; gap: 8px; flex-wrap: wrap; }
-.option { border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; cursor: pointer; background: var(--surface); }
+.option { border: 1px solid var(--muted); border-radius: 8px; padding: 9px 14px; cursor: pointer; background: var(--surface); color: var(--ink); font: inherit; }
+.option:disabled { opacity: 0.6; cursor: default; }
 .option.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 .tabs { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
 .tab { border: 1px solid var(--line); border-radius: 99px; padding: 5px 14px; cursor: pointer; background: transparent; color: var(--ink); }
 .tab.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 
 /* Проектор */
-.screen { min-height: 100vh; padding: 3vh 4vw; font-size: clamp(18px, 1.6vw, 30px); display: flex; flex-direction: column; }
+.screen { min-height: 100vh; padding: 3vh 4vw; font-size: calc(clamp(18px, 1.6vw, 30px) * var(--fit, 1)); display: flex; flex-direction: column; }
 .screen .header { font-size: 0.75em; }
 .screen h2 { font-size: 1.6em; margin: 0.2em 0 0.6em; }
 .screen .body { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26em), 1fr)); gap: 0 1em; align-content: start; }
-.screen .body > .html, .screen .body > .counter, .screen .body > .slide-side, .screen .body > .slide-full, .screen .body > .error { grid-column: 1 / -1; }
+.screen .body > .html, .screen .body > .counter, .screen .body > .slide-side, .screen .body > .slide-full, .screen .body > .slide-below, .screen .body > .error { grid-column: 1 / -1; }
 .screen .card { margin: 0.4em 0; }
 .screen .card { padding: 0.7em 0.9em; }
 .screen table { font-size: 0.85em; }
+.screen th { font-size: 0.85em; }
+/* Таблица по командам — на всю ширину слайда; числа со значками не переносятся. */
+.screen .body > .card.wide { grid-column: 1 / -1; }
+.screen .wide td:not(:first-child) { white-space: nowrap; }
+.screen .wide th, .screen .wide td { padding: 0.25em 0.5em; }
+.screen .wide td:first-child { max-width: 12em; overflow-wrap: anywhere; }
 .screen .counter { font-size: 2.2em; }
 .slide-side { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 2em; align-items: start; }
 .slide-full img { width: 100%; max-height: 72vh; object-fit: contain; }
+/* Картинка под текстом и сложенная «сбоку» на узком экране не выталкивают текст за край слайда. */
+.slide-below img { width: 100%; max-height: 52vh; object-fit: contain; }
 .slide-img { width: 100%; border-radius: var(--radius); }
 .cols { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 
@@ -104,4 +131,4 @@ tr.hl td { background: var(--accent-soft); font-weight: 600; }
 .steps { max-height: 40vh; overflow: auto; font-size: 0.9rem; }
 .steps .step { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; padding: 3px 0; }
 .notice { background: var(--warn-soft); color: var(--warn); border-radius: var(--radius); padding: 10px 14px; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
-@media (max-width: 900px) { .control, .slide-side { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .control, .slide-side { grid-template-columns: 1fr; } .slide-side img { max-height: 45vh; object-fit: contain; } }

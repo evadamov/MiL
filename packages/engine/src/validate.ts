@@ -134,6 +134,9 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
     }
   };
 
+  for (const [a, def] of Object.entries(sc.root.accounts ?? {}))
+    for (const ph of Object.keys(def.by_phase ?? {}))
+      if (!sc.phases.some((p) => p.id === ph)) diag({ code: "E040", message: `accounts.${a}.by_phase: нет фазы ${ph}`, pos: at(`root/accounts/${a}/by_phase/${ph}`) });
   if (!sc.checks.find((c) => c.id === sc.root.reference))
     diag({ code: "E040", message: `reference: нет проверки ${sc.root.reference}`, pos: at("root/reference") });
   else if (sc.checks.find((c) => c.id === sc.root.reference)!.sweep)

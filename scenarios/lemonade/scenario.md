@@ -19,7 +19,9 @@ include: [season-1-yard.md, season-2-park.md]
 его воспроизводить: см. раздел `# checks`.
 
 ```sim
-currency: {label: монет, short: м}
+currency: {label: монет, short: 🪙}
+theme: light
+icons: {people: 👤, unit: 🥤}
 
 params:
   goal: 3000                    # цена смартфона; называется только на Д16
@@ -28,6 +30,7 @@ params:
     promo_price: 4
     cup_cost: 2
     jug_cups: 15
+    own_cups_mon: 1               # Малыш выпивает сам в понедельник
     second_jug_price: 15
     traffic: 20
     conversion: 0.7
@@ -63,11 +66,12 @@ params:
     - {key: 500, cost: 30, traffic_add: 34}
 
 accounts:
-  receivables: {label: Долги покупателей}
+  receivables: {label: Дебиторка}
+  cogs: {label: Себестоимость, by_phase: {yard: Платёж маме}}
   equipment: {label: Оборудование}
   inventory: {label: Запас колы}
   loan: {label: Долг папе}
-  waste: {label: Списания}
+  waste: {label: Списания, by_phase: {yard: Платёж маме}}
   bad_debt: {label: Невозвращённые долги}
   fixed_costs: {label: Место и лёд}
   marketing: {label: Флаеры}
@@ -99,11 +103,21 @@ reference: reference_team
 | Ингредиенты на стакан | {{p.yard.cup_cost}} |
 | Кувшин | {{p.yard.jug_cups}} стаканов |
 
-Пн–Ср мама готовит кувшины утром: объём фиксирован до того, как виден
-спрос, непроданное выливают. Чт–Пт наливает по ходу дня, выливать нечего.
+Мама готовит кувшин утром: сколько стаканов, решается до того, как
+видно, сколько купят. Что не продалось, пропадает, а за ингредиенты
+уже заплачено.
 
 ```sim
 from: d1
+```
+
+## page yard_pour · Мама наливает по ходу дня
+
+С четверга у мамы выходной: она наливает по стакану, когда приходит
+покупатель. Лишнего не остаётся.
+
+```sim
+from: d4
 ```
 
 ## page park · Параметры парка
@@ -114,8 +128,22 @@ from: d1
 | Оборудование | {{p.park.equipment}} |
 | Место в парке, в день | {{p.park.place}} |
 | Лёд, в день | {{p.park.ice}} |
+
+```sim
+from: d7
+```
+
+## page cola · Кола
+
+| Параметр | Значение |
+|---|---:|
 | Закупка бутылки колы | {{p.park.cola_cost}} |
-| Ингредиенты лимонада, за стакан | {{p.park.lemon_cost}} |
+
+```sim
+from: d8
+```
+
+## page flyers · Флаеры
 
 | Флаеры | Стоимость |
 |---:|---:|
@@ -124,7 +152,17 @@ from: d1
 | 500 | {{p.flyers.3.cost}} |
 
 ```sim
-from: d7
+from: d10
+```
+
+## page lemonade_park · Лимонад в парке
+
+| Параметр | Значение |
+|---|---:|
+| Ингредиенты лимонада, за стакан | {{p.park.lemon_cost}} |
+
+```sim
+from: d12
 ```
 
 # lessons

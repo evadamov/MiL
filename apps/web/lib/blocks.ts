@@ -1,8 +1,8 @@
 // Блоки экранов: сервер собирает, клиент только рисует.
 export type Block =
   | { type: "html"; html: string; tone?: "legend" | "move" | "results" | "debrief" | "discussion" | "trainer" | "note" }
-  | { type: "image"; src: string; layout: "side" | "full" | "text" }
-  | { type: "table"; title?: string; head: string[]; rows: string[][]; highlight?: number[]; note?: string; compact?: boolean }
+  | { type: "image"; src: string; layout: "side" | "below" | "full" | "text" }
+  | { type: "table"; title?: string; head: string[]; rows: string[][]; highlight?: number[]; note?: string; compact?: boolean; wide?: boolean }
   | { type: "counter"; submitted: number; total: number; closed: boolean }
   | { type: "form"; stepId: string; open: boolean; fields: Field[] }
   | { type: "error"; message: string };
@@ -27,13 +27,14 @@ export interface Header {
   stepNo: number;
   steps: number;
   stage: string;
+  theme?: "light" | "dark";
 }
 
 export interface ScreenView {
   version: number;
   header: Header;
   /** Для «вводной» с картинкой: раскладка слайда. */
-  layout: "side" | "full" | "text";
+  layout: "side" | "below" | "full" | "text";
   blocks: Block[];
   finished: boolean;
 }

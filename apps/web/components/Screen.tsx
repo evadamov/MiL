@@ -18,6 +18,11 @@ export function Slide({ v, code }: { v: ScreenView; code?: string }) {
               <Blocks blocks={rest} />
             </div>
           </div>
+        ) : image && v.layout === "below" ? (
+          <div className="slide-below">
+            <Blocks blocks={rest} />
+            <Blocks blocks={[image]} />
+          </div>
         ) : image && v.layout === "full" ? (
           <div className="slide-full">
             <Blocks blocks={[image]} />

@@ -233,10 +233,11 @@ interface Segment {
 |---|---|---|
 | `quantity` | целое ≥ 0 | сколько сделано |
 | `unit_cost` | целое ≥ 0 | |
+| `own_use` | целое ≥ 0 | сколько единиц партии не идёт в продажу (выпили сами и т. п.), по умолчанию 0; не больше `quantity` |
 | `source` | строка | по умолчанию `production` |
 
-`sold = min(спрос, quantity)`, очередь разбирается сверху вниз →
-`allocation`. Проводка: `cogs +sold×unit_cost, waste +(quantity−sold)×unit_cost,
+`sold = min(спрос, quantity − own_use)`, очередь разбирается сверху вниз →
+`allocation`. Проводка: `cogs +sold×unit_cost, waste +(quantity−sold)×unit_cost (own_use входит сюда),
 cash −quantity×unit_cost`. Выручку проводит движок (п. 3.1).
 
 ### `on_demand_production` · supply

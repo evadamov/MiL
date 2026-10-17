@@ -1,8 +1,14 @@
 "use client";
 // Отрисовка блоков, собранных сервером. Логики здесь нет — только вид.
+import { useEffect } from "react";
 import type { Block, Header } from "@/lib/blocks";
 
 export function HeaderBar({ h, right }: { h: Header; right?: React.ReactNode }) {
+  // Тема сценария — на весь документ: проектор, пульт и экран команды выглядят одинаково.
+  useEffect(() => {
+    if (h.theme) document.documentElement.dataset.theme = h.theme;
+    else delete document.documentElement.dataset.theme;
+  }, [h.theme]);
   return (
     <div className="header">
       <div>
@@ -20,7 +26,7 @@ export function HeaderBar({ h, right }: { h: Header; right?: React.ReactNode }) 
 
 export function TableBlock({ b }: { b: Extract<Block, { type: "table" }> }) {
   return (
-    <div className="card">
+    <div className={b.wide ? "card wide" : "card"}>
       {b.title && <p className="table-title">{b.title}</p>}
       <div className="table-wrap">
         <table>

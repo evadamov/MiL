@@ -2,7 +2,7 @@
 // Выручку проводит движок на стадии settle (docs/mechanics.md, п. 3.1).
 import { type Mechanic, allocate, demandOf, nonNegInt, str } from "./contract.ts";
 
-export const batchProduction: Mechanic<{ quantity: number; unit_cost: number; source?: string }> = {
+export const batchProduction: Mechanic<{ quantity: number; unit_cost: number; own_use?: number; source?: string }> = {
   id: "batch_production",
   major: 1,
   stage: "supply",
@@ -10,10 +10,13 @@ export const batchProduction: Mechanic<{ quantity: number; unit_cost: number; so
     type: "object",
     required: ["quantity", "unit_cost"],
     additionalProperties: false,
-    properties: { quantity: nonNegInt, unit_cost: nonNegInt, source: str },
+    properties: { quantity: nonNegInt, unit_cost: nonNegInt, own_use: nonNegInt, source: str },
   },
   step(ctx, p) {
-    const { units, sold } = allocate(ctx.trade, p.quantity);
+    // own_use — единицы партии, которые не идут в продажу (выпили сами, отдали и т. п.); учитываются как списание.
+    const ownUse = p.own_use ?? 0;
+    if (ownUse > p.quantity) throw new Error(`own_use ${ownUse} больше партии ${p.quantity}`);
+    const { units, sold } = allocate(ctx.trade, p.quantity - ownUse);
     const waste = p.quantity - sold;
     return {
       allocation: { units, unit_cost: p.unit_cost, produced: p.quantity, waste_units: waste },

@@ -21,7 +21,13 @@ export const ACCOUNT_LABELS: Record<string, string> = {
   marketing: "Маркетинг",
 };
 
-export const accountLabel = (sc: Scenario, a: string) => sc.root.accounts?.[a]?.label ?? ACCOUNT_LABELS[a] ?? a;
+export const accountLabel = (sc: Scenario, a: string, phase?: string) =>
+  (phase && sc.root.accounts?.[a]?.by_phase?.[phase]) || sc.root.accounts?.[a]?.label || ACCOUNT_LABELS[a] || a;
+/** Число со значком сценария после него, как у денег: «20 👤». */
+export const withIcon = (sc: Scenario, icon: "people" | "unit", text: string) => {
+  const i = sc.root.icons?.[icon];
+  return i && text !== "—" ? `${text} ${i}` : text;
+};
 export const sourceLabel = (sc: Scenario, s: string) => sc.root.sources?.[s] ?? s;
 
 const nf = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
