@@ -1,6 +1,6 @@
 ---
 id: lemonade
-version: 19
+version: 20
 title: Малыш и лимонад
 locale: ru
 duration_min: 90
@@ -15,9 +15,10 @@ include: [season-1-yard.md, season-2-park.md]
 Выручка и деньги, скидки, юнит-экономика и безубыточность, цена, каналы
 привлечения, прогноз.
 
-Канон чисел — [canon/context-v16.md](canon/context-v16.md). Сценарий обязан
-его воспроизводить на эталонном пути: см. раздел `# checks`. Выбор приготовить
-два кувшина в среду добавляет новую ветку к этому канону.
+Канон финансов — [canon/context-v16.md](canon/context-v16.md). Сценарий обязан
+его воспроизводить на эталонном пути: см. раздел `# checks`. Посещаемость двора
+по дням слегка меняется, число покупок и финансовый результат сохранены.
+Выбор приготовить два кувшина в среду добавляет новую ветку к канону.
 
 ```sim
 currency: {label: монет, short: 🪙}
@@ -33,8 +34,8 @@ params:
     jug_cups: 15
     own_cups_mon: 1               # Малыш выпивает сам в понедельник
     second_jug_price: 15
-    traffic: 20
-    conversion: 0.7
+    traffic: {mon: 21, wed: 19, thu: 21, fri: 20}
+    conversion: {mon: 0.67, wed: 0.74, thu: 0.67, fri: 0.9}
   park:
     loan: 500
     equipment: 330
@@ -206,7 +207,8 @@ takeaway: true
 kind: path
 assert:
   and:
-    - {"==": [{var: at.d5.metrics.traffic}, {var: at.d4.metrics.traffic}]}
+    - {"<=": [{var: at.d5.metrics.traffic}, {var: at.d4.metrics.traffic}]}
+    - {"<=": [{"-": [{var: at.d4.metrics.traffic}, {var: at.d5.metrics.traffic}]}, 1]}
     - {">": [{var: at.d5.metrics.sold}, {var: at.d4.metrics.sold}]}
     - {"<": [{var: at.d5.pl.day}, {var: at.d4.pl.day}]}
 ```
@@ -396,6 +398,8 @@ decisions:
   d13.flyers: 300
   d14_order.prep: 19
 expect:
+  at.d1.metrics.traffic: 21
+  at.d1.metrics.sold: 14
   at.d1.pl.day: 40
   at.d1.cash: 40
   at.d2.pl.day: 90
@@ -406,16 +410,22 @@ expect:
   at.d2.metrics.sold_credit: 16
   at.d3.pl.day: -5
   at.d3.cash: 110
+  at.d3.metrics.traffic: 19
+  at.d3.metrics.sold: 14
   at.d3.pl.lines.revenue: 70
   at.d3.pl.lines.cogs: 28
   at.d3.pl.lines.waste: 2
   at.d3.pl.lines.bad_debt: 45
   at.d3.metrics.collections.returned_amount: 35
   at.d4.pl.day: 42
+  at.d4.metrics.traffic: 21
+  at.d4.metrics.sold: 14
   at.d4.pl.lines.revenue: 70
   at.d4.pl.lines.cogs: 28
   at.d4.cash: 152
   at.d5.pl.day: 36
+  at.d5.metrics.traffic: 20
+  at.d5.metrics.sold: 18
   at.d5.pl.lines.revenue: 72
   at.d5.pl.lines.cogs: 36
   at.d5.cash: 188

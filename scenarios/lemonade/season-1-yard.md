@@ -39,7 +39,7 @@ duration: {min: 3, max: 4}
 legend: {image: assets/d1.png, layout: below}
 mechanics:
   - use: funnel
-    params: {traffic: $p.yard.traffic, conversion: $p.yard.conversion, price: $p.yard.price}
+    params: {traffic: $p.yard.traffic.mon, conversion: $p.yard.conversion.mon, price: $p.yard.price}
   - use: batch_production
     params: {quantity: $p.yard.jug_cups, own_use: $p.yard.own_cups_mon, unit_cost: $p.yard.cup_cost, source: ingredients}
 ```
@@ -144,7 +144,7 @@ inputs:
     unit: монет
 mechanics:
   - use: funnel
-    params: {traffic: $p.yard.traffic, conversion: $p.yard.conversion, price: $p.yard.price}
+    params: {traffic: $p.yard.traffic.wed, conversion: $p.yard.conversion.wed, price: $p.yard.price}
   - use: batch_production
     params:
       quantity: {expr: {if: [{"==": [{var: input.prep}, two_jugs]}, {"*": [{var: p.yard.jug_cups}, 2]}, {var: p.yard.jug_cups}]}}
@@ -176,7 +176,7 @@ duration: {min: 2, max: 2}
 legend: {image: assets/d4.png, layout: below}
 mechanics:
   - use: funnel
-    params: {traffic: $p.yard.traffic, conversion: $p.yard.conversion, price: $p.yard.price}
+    params: {traffic: $p.yard.traffic.thu, conversion: $p.yard.conversion.thu, price: $p.yard.price}
   - use: on_demand_production
     params: {unit_cost: $p.yard.cup_cost, source: ingredients}
 ```
@@ -196,7 +196,7 @@ inputs:
     unit: стаканов
 mechanics:
   - use: funnel
-    params: {traffic: $p.yard.traffic, conversion: 0.9, price: $p.yard.promo_price}
+    params: {traffic: $p.yard.traffic.fri, conversion: $p.yard.conversion.fri, price: $p.yard.promo_price}
   - use: on_demand_production
     params: {unit_cost: $p.yard.cup_cost, source: ingredients}
 trainer: {checkpoint: "0:28"}
@@ -208,8 +208,8 @@ trainer: {checkpoint: "0:28"}
 
 ### results
 
-Купили {{metrics.sold}} человек — больше, чем вчера. Людей во дворе
-столько же.
+Купили {{metrics.sold}} человек — больше, чем вчера. Мимо прошло
+{{metrics.traffic}} человек: на одного меньше, чем вчера.
 
 ## step d6 · Суббота · Итоги двора
 
