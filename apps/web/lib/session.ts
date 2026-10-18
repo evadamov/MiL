@@ -1,9 +1,9 @@
 // Логика сессии воркшопа (docs/spec.md, п. 3, 6): фазы шага, два указателя —
 // шаг игры и показ на проекторе, приём ходов, значения по умолчанию.
 // Чистые функции над документом сессии; хранение — в store.ts.
-import { InputValueError, isModelInput, normalizeInput, type Decisions, type InputDef, type Scenario, type StepDef } from "@mil/engine";
+import { InputValueError, isModelInput, normalizeInput, type Decisions, type InputDef, type Json, type Scenario, type StepDef } from "@mil/engine";
 
-export type Phase = "legend" | "intake" | "closed" | "results" | "debrief";
+export type Phase = "legend" | "intake" | "closed" | "results" | "question" | "debrief" | "takeaways";
 export type MoveSource = "team" | "default" | "trainer";
 
 export interface Move {
@@ -57,16 +57,34 @@ export function hasResults(step: StepDef): boolean {
   return !!(step.block.inputs?.length || step.block.mechanics?.length || step.block.type === "summary");
 }
 
-export function hasDebrief(step: StepDef): boolean {
-  return step.slots.some((s) => s.name === "debrief" || s.name === "discussion");
+const hasSlot = (step: StepDef, name: string) => step.slots.some((s) => s.name === name);
+
+/** Панели результатов шага: заданные в сценарии или по типу шага. */
+export function panelsOf(step: StepDef): Json[] {
+  if (step.block.results?.panels) return step.block.results.panels;
+  if (step.block.type === "summary") return ["statements", "takeaways"];
+  const inputs = step.block.inputs ?? [];
+  const p: Json[] = [];
+  if (inputs.some(isModelInput)) p.push("choices");
+  if (inputs.some((x) => !isModelInput(x))) p.push("answers");
+  if (step.block.variants?.length) p.push("variants");
+  if (step.block.mechanics?.length) p.push("facts");
+  return p;
 }
 
-/** Фазы шага в порядке прохождения. */
+export const isTakeawaysPanel = (p: Json) => p === "takeaways" || (!!p && typeof p === "object" && "takeaways" in p);
+
+/**
+ * Фазы шага в порядке прохождения. После результатов — отдельными экранами:
+ * вопрос залу (### discussion), вывод (### debrief), ловушки (панель takeaways).
+ */
 export function phasesOf(step: StepDef): Phase[] {
   const p: Phase[] = ["legend"];
   if (step.block.inputs?.length) p.push("intake", "closed");
   if (hasResults(step)) p.push("results");
-  if (hasDebrief(step)) p.push("debrief");
+  if (hasSlot(step, "discussion")) p.push("question");
+  if (hasSlot(step, "debrief")) p.push("debrief");
+  if (panelsOf(step).some(isTakeawaysPanel)) p.push("takeaways");
   return p;
 }
 

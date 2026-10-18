@@ -43,8 +43,9 @@ describe("фазы шага", () => {
     expect(by("intro")).toEqual(["legend"]);
     expect(by("d1")).toEqual(["legend", "results"]);
     expect(by("d2")).toEqual(["legend", "intake", "closed", "results"]);
-    expect(by("d3")).toEqual(["legend", "intake", "closed", "results", "debrief"]);
-    expect(by("d6")).toEqual(["legend", "results", "debrief"]);
+    expect(by("d3")).toEqual(["legend", "intake", "closed", "results", "question"]);
+    expect(by("d5")).toEqual(["legend", "results", "question", "debrief"]);
+    expect(by("d6")).toEqual(["legend", "results", "question", "takeaways"]);
   });
 });
 

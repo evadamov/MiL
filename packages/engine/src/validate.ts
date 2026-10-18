@@ -134,9 +134,10 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
     }
   };
 
-  for (const [a, def] of Object.entries(sc.root.accounts ?? {}))
-    for (const ph of Object.keys(def.by_phase ?? {}))
-      if (!sc.phases.some((p) => p.id === ph)) diag({ code: "E040", message: `accounts.${a}.by_phase: нет фазы ${ph}`, pos: at(`root/accounts/${a}/by_phase/${ph}`) });
+  for (const [kind, defs] of [["accounts", sc.root.accounts ?? {}], ["sources", sc.root.sources ?? {}]] as const)
+    for (const [a, def] of Object.entries(defs))
+      for (const ph of Object.keys(typeof def === "object" ? (def.by_phase ?? {}) : {}))
+        if (!sc.phases.some((p) => p.id === ph)) diag({ code: "E040", message: `${kind}.${a}.by_phase: нет фазы ${ph}`, pos: at(`root/${kind}/${a}/by_phase/${ph}`) });
   if (!sc.checks.find((c) => c.id === sc.root.reference))
     diag({ code: "E040", message: `reference: нет проверки ${sc.root.reference}`, pos: at("root/reference") });
   else if (sc.checks.find((c) => c.id === sc.root.reference)!.sweep)
@@ -350,6 +351,7 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
         if (!Array.isArray(rows)) diag({ code: "E040", message: `tables.${name}.rows — не список`, pos: at(`${ptr}/tables/${name}/rows`) });
       }
       (step.block.inputs ?? []).forEach((inp, i) => {
+        if (inp.type === "forecast" && inp.actual !== undefined) tryResolve(inp.actual, `${ptr}/inputs/${i}/actual`);
         if (inp.type !== "quiz") return;
         try {
           const a = resolveValue(inp.answer as Json, after);
@@ -376,6 +378,28 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
           }
     }
     for (const pg of sc.pages) checkTemplates(pg.text, { p: sc.root.params }, pg.pos, `page ${pg.id}`, diag);
+
+    // Общие тексты на проекторе (вводная и слоты без условия): число, разное у
+    // команд с разными ходами, на проекторе станет «…» — предупреждаем автора.
+    for (const step of sc.steps) {
+      const idx = stepIndex.get(step.id)!;
+      const shown = [
+        { text: step.legend, after: false, pos: step.pos },
+        ...step.slots.filter((s) => !s.cond && s.name !== "trainer").map((s) => ({ text: s.text, after: s.name !== "move", pos: s.pos })),
+      ];
+      for (const t of shown) {
+        const paths = [...new Set([...t.text.matchAll(TEMPLATE_RE)].map((m) => m[1].trim()))];
+        if (!paths.length) continue;
+        const seen = new Map(paths.map((x) => [x, new Set<string>()]));
+        for (const { r } of runs) {
+          const ctx = t.after ? { ...r.at[step.id], ...pathDataAt(sc, r, idx, true), input: r.at[step.id].input } : pathDataAt(sc, r, idx, false);
+          for (const x of paths) seen.get(x)!.add(JSON.stringify(getPath({ ...ctx, p: sc.root.params }, x)));
+        }
+        for (const [x, vals] of seen)
+          if (vals.size > 1)
+            diag({ code: "W081", message: `{{${x}}} в общем тексте зависит от ходов команд — на проекторе будет «…»; числа команд — в таблицах или в условных вариантах текста`, pos: t.pos, where: `step ${step.id}` });
+      }
+    }
   }
 
   // ---------- выводы ----------
@@ -481,13 +505,16 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
   return report;
 }
 
+/** Подстановка {{путь}} или {{путь | формат}}. */
+const TEMPLATE_RE = /\{\{\s*([^}|]+?)\s*(?:\|\s*([^}\s]+)\s*)?\}\}/g;
+
 function fmtDecisions(d: Decisions, omit?: string): string {
   const e = Object.entries(d).filter(([k, v]) => k !== omit && v !== null && v !== undefined);
   return e.length ? e.map(([k, v]) => `${k}=${v}`).join(", ") : "все по умолчанию";
 }
 
 function checkTemplates(text: string, ctx: unknown, pos: Pos, where: string, diag: (d: Omit<Diagnostic, "severity">) => void) {
-  for (const m of text.matchAll(/\{\{\s*([^}|]+?)\s*(?:\|\s*([^}\s]+)\s*)?\}\}/g)) {
+  for (const m of text.matchAll(TEMPLATE_RE)) {
     const [, p, fmt] = m;
     if (fmt && !FORMATS.has(fmt)) diag({ code: "E080", message: `неизвестный формат «${fmt}» в {{${p} | ${fmt}}}`, pos, where });
     if (getPath(ctx, p) === undefined) diag({ code: "E080", message: `{{${p}}}: нет такой переменной в этот момент шага`, pos, where });

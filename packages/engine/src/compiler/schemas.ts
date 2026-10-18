@@ -58,7 +58,12 @@ export const rootSchema = {
         properties: { label: str, by_phase: { type: "object", additionalProperties: str } },
       },
     },
-    sources: { type: "object", additionalProperties: str },
+    sources: {
+      type: "object",
+      additionalProperties: {
+        oneOf: [str, { type: "object", required: ["label"], additionalProperties: false, properties: { label: str, by_phase: { type: "object", additionalProperties: str } } }],
+      },
+    },
     conditions: { type: "object", additionalProperties: condition },
     reference: id,
   },
@@ -84,6 +89,7 @@ const input = {
     samples: { type: "array", minItems: 1, items: { type: "number" } },
     default: scalar,
     answer: {},
+    actual: {},
     tolerance: { type: "number", minimum: 0 },
     explain: str,
   },
@@ -91,6 +97,7 @@ const input = {
     { if: { properties: { type: { const: "choice" } } }, then: { required: ["options"] } },
     { if: { properties: { type: { const: "quiz" } } }, then: { required: ["answer"], not: { required: ["default"] } } },
     { if: { properties: { type: { const: "forecast" } } }, then: { not: { anyOf: [{ required: ["default"] }, { required: ["answer"] }] } } },
+    { if: { not: { properties: { type: { const: "forecast" } } } }, then: { not: { required: ["actual"] } } },
   ],
 } as const;
 
@@ -99,11 +106,16 @@ const panel = {
     { enum: ["facts", "choices", "answers", "variants", "statements", "takeaways"] },
     {
       type: "object",
+      required: ["metrics"],
+      additionalProperties: false,
+      properties: { metrics: { type: "array", minItems: 1, items: column }, title: str },
+    },
+    {
+      type: "object",
       minProperties: 1,
       maxProperties: 1,
       additionalProperties: false,
       properties: {
-        metrics: { type: "array", minItems: 1, items: column },
         table: id,
         variants: id,
         takeaways: { const: "all" },

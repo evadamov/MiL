@@ -19,8 +19,8 @@ import {
   type StepDef,
 } from "@mil/engine";
 import { PHASE_LABELS, type Block, type ControlView, type Field, type Header, type ScreenView, type TeamView } from "./blocks";
-import { accountLabel, fmt, label, md, sourceLabel, withIcon } from "./render";
-import { decisionsOf, isClosed, isRevealed, phasesOf, showablePhases, stepAt, type Phase, type SessionDoc, type Team } from "./session";
+import { accountLabel, fmt, label, md, mdShared, sourceLabel, withIcon } from "./render";
+import { decisionsOf, isClosed, isRevealed, isTakeawaysPanel, panelsOf, phasesOf, showablePhases, stepAt, type Phase, type SessionDoc, type Team } from "./session";
 
 // ---------- расчёт путей, кэш по версии документа ----------
 
@@ -114,13 +114,17 @@ function pnlRows(sc: Scenario, lines: Record<string, number>, phase: string): [s
   return [...sums].map(([l, v]) => [l, fmt(sc, v, "money")]);
 }
 
+/** «Продано»: всего, в скобках — сколько из них в долг. */
+const soldCell = (sc: Scenario, m: Record<string, number | undefined>) =>
+  withIcon(sc, "unit", fmt(sc, m.sold, "int")) + (m.sold_credit ? ` (${m.sold_credit})` : "");
+
 function factsRowsOf(sc: Scenario, s: Snapshot, phase: string): [string, string][] {
   const m = s.metrics as Record<string, number | undefined>;
   const rows: [string, string][] = [];
   if (m.traffic !== undefined) {
     rows.push(["Трафик", withIcon(sc, "people", fmt(sc, m.traffic, "int"))]);
     if (m.demand !== undefined) rows.push(["Хотели купить", withIcon(sc, "people", fmt(sc, m.demand, "int"))]);
-    if (m.sold !== undefined) rows.push(["Продано", withIcon(sc, "unit", fmt(sc, m.sold, "int")) + (m.sold_credit ? ` (в долг ${m.sold_credit})` : "")]);
+    if (m.sold !== undefined) rows.push(["Продано", soldCell(sc, m)]);
     if (m.waste_units) rows.push(["Списано", withIcon(sc, "unit", fmt(sc, m.waste_units, "int"))]);
     if (m.conversion !== undefined) rows.push(["Конверсия", fmt(sc, m.conversion, "percent1")]);
   }
@@ -130,8 +134,8 @@ function factsRowsOf(sc: Scenario, s: Snapshot, phase: string): [string, string]
   // Долги покупателей: пока они есть и в день возврата.
   const debt = s.balance.receivables;
   if (debt !== undefined && (debt !== 0 || s.cf.collections)) rows.push([accountLabel(sc, "receivables", phase), fmt(sc, debt, "money")]);
-  for (const [src, v] of Object.entries(s.cf)) if (v && !Object.keys(lines).length) rows.push([sourceLabel(sc, src), fmt(sc, v, "money")]);
-  rows.push(["Деньги на конец", fmt(sc, s.cash, "money")]);
+  for (const [src, v] of Object.entries(s.cf)) if (v && !Object.keys(lines).length) rows.push([sourceLabel(sc, src, phase), fmt(sc, v, "money")]);
+  rows.push(["Деньги в кассе", fmt(sc, s.cash, "money")]);
   return rows;
 }
 
@@ -140,12 +144,13 @@ function factsRowsOf(sc: Scenario, s: Snapshot, phase: string): [string, string]
  * Несколько команд — строка на команду, показатели в колонках: таблица растёт
  * вниз с числом команд и не уезжает за правый край проектора.
  */
-function columnsTable(title: string | undefined, cols: { name: string; rows: [string, string][] }[]): Block {
+function columnsTable(title: string | undefined, cols: { name: string; rows: [string, string][] }[], center: string[] = []): Block {
   const labels: string[] = [];
   for (const c of cols) for (const [l] of c.rows) if (!labels.includes(l)) labels.push(l);
   const cell = (c: (typeof cols)[number], l: string) => c.rows.find(([x]) => x === l)?.[1] ?? "—";
   if (cols.length === 1) return { type: "table", title, head: ["", cols[0].name], rows: labels.map((l) => [l, cell(cols[0], l)]) };
-  return { type: "table", title, wide: true, head: ["Команда", ...labels], rows: cols.map((c) => [c.name, ...labels.map((l) => cell(c, l))]) };
+  const centered = labels.flatMap((l, k) => (center.includes(l) ? [k + 1] : []));
+  return { type: "table", title, wide: true, head: ["Команда", ...labels], rows: cols.map((c) => [c.name, ...labels.map((l) => cell(c, l))]), center: centered };
 }
 
 function factsBlock(doc: SessionDoc, c: Computed, i: number, mode: Mode): Block {
@@ -156,7 +161,7 @@ function factsBlock(doc: SessionDoc, c: Computed, i: number, mode: Mode): Block 
   const runs = okRuns(doc, c);
   if (!runs.length) return { type: "table", title: "Итоги дня (эталон)", head: ["", "Эталон"], rows: factsRows(sc, c.ref.at[id]) };
   // Колонка на каждую команду, даже если цифры совпали: зал видит себя на проекторе.
-  return columnsTable("Итоги дня", runs.map(({ team, r }) => ({ name: team.name, rows: factsRows(sc, r.at[id]) })));
+  return columnsTable("Итоги дня", runs.map(({ team, r }) => ({ name: team.name, rows: factsRows(sc, r.at[id]) })), ["Продано"]);
 }
 
 function moveOf(doc: SessionDoc, team: Team, step: StepDef, inp: InputDef) {
@@ -215,6 +220,7 @@ function answersBlocks(doc: SessionDoc, c: Computed, i: number, mode: Mode): Blo
       if (mode.kind === "team") {
         const v = moveOf(doc, mode.team, step, inp)?.value;
         const rows: string[][] = [["Ваш ответ", v === undefined ? "вы не ответили" : fmt(sc, v) + unit]];
+        if (inp.type === "forecast" && inp.actual !== undefined) rows.push(["Факт", fmt(sc, safeResolve(inp.actual as Json, afterCtx(doc, mode.r, i))) + unit]);
         if (inp.type === "quiz") {
           const a = answerFor(inp, mode.r);
           rows.push(["Правильный ответ", a === null ? "—" : fmt(sc, roundShown(a)) + unit + (inp.tolerance ? ` (±${fmt(sc, inp.tolerance)})` : "")]);
@@ -225,16 +231,21 @@ function answersBlocks(doc: SessionDoc, c: Computed, i: number, mode: Mode): Blo
       }
       const runs = okRuns(doc, c);
       const answered = runs.filter(({ team }) => moveOf(doc, team, step, inp) !== undefined);
+      const actualOf = (r: PathResult) => (inp.actual === undefined ? undefined : safeResolve(inp.actual as Json, afterCtx(doc, r, i)));
       if (inp.type === "forecast") {
         const vals = answered.map(({ team }) => Number(moveOf(doc, team, step, inp)!.value)).sort((a, b) => a - b);
         const note = vals.length
-          ? `ответили ${vals.length} из ${doc.teams.length}; разброс ${fmt(sc, vals[0])}–${fmt(sc, vals[vals.length - 1])}${unit}, медиана ${fmt(sc, vals[Math.floor((vals.length - 1) / 2)])}`
+          ? `ответили ${vals.length} из ${doc.teams.length}; разброс ${fmt(sc, vals[0])}–${fmt(sc, vals[vals.length - 1])}${unit}, медиана ${fmt(sc, median(vals))}`
           : "никто не ответил";
         return {
           type: "table",
           title: inp.label,
-          head: ["Команда", "Прогноз"],
-          rows: doc.teams.map((t) => [t.name, fmt(sc, moveOf(doc, t, step, inp)?.value) + (moveOf(doc, t, step, inp) ? unit : "")]),
+          head: ["Команда", "Прогноз", ...(inp.actual !== undefined ? ["Факт"] : [])],
+          rows: doc.teams.map((t) => {
+            const r = c.teams.get(t.id);
+            const fact = inp.actual !== undefined && r && !(r instanceof Error) ? [fmt(sc, actualOf(r)) + unit] : inp.actual !== undefined ? ["—"] : [];
+            return [t.name, fmt(sc, moveOf(doc, t, step, inp)?.value) + (moveOf(doc, t, step, inp) ? unit : ""), ...fact];
+          }),
           note,
         } as Block;
       }
@@ -257,6 +268,8 @@ function answersBlocks(doc: SessionDoc, c: Computed, i: number, mode: Mode): Blo
 }
 
 const roundShown = (x: number) => Math.round(x * 100) / 100;
+/** Медиана отсортированного списка: при чётном числе — среднее двух средних. */
+const median = (xs: number[]) => (xs.length % 2 ? xs[(xs.length - 1) / 2] : (xs[xs.length / 2 - 1] + xs[xs.length / 2]) / 2);
 function fillExplain(doc: SessionDoc, inp: InputDef, r: PathResult, i: number): string {
   return md(doc.scenario, inp.explain ?? "", afterCtx(doc, r, i)).replace(/<\/?p>/g, "").trim();
 }
@@ -313,7 +326,7 @@ function statementBlock(doc: SessionDoc, r: PathResult, i: number, kind: "pnl" |
     const names = { operating: "Операционная", investing: "Инвестиционная", financing: "Финансовая" } as const;
     const rows: string[][] = [];
     for (const k of ["operating", "investing", "financing"] as const)
-      for (const x of cf.sections[k]) rows.push([`${names[k]}: ${sourceLabel(sc, x.source)}`, fmt(sc, x.amount, "money")]);
+      for (const x of cf.sections[k]) rows.push([`${names[k]}: ${sourceLabel(sc, x.source, step.phase)}`, fmt(sc, x.amount, "money")]);
     rows.push(["Изменение денег", fmt(sc, cf.total, "money")]);
     return { type: "table", title: `Cash Flow ${scopeName} · ${who}`, head: ["", ""], rows };
   }
@@ -322,7 +335,6 @@ function statementBlock(doc: SessionDoc, r: PathResult, i: number, kind: "pnl" |
     .filter(([a, v]) => v && ["asset", "liability", "equity"].includes(ACCOUNTS[a]))
     .map(([a, v]) => [accountLabel(sc, a, step.phase), fmt(sc, v, "money")]);
   rows.push(["Накопленная прибыль", fmt(sc, snap.pl.cumulative, "money")]);
-  rows.push(["Проверка баланса", fmt(sc, snap.check.balance)]);
   return { type: "table", title: `Баланс на конец · ${who}`, head: ["", ""], rows };
 }
 
@@ -343,12 +355,8 @@ function panelBlocks(doc: SessionDoc, c: Computed, i: number, panel: Json, mode:
   if (p === "choices") return choicesBlocks(doc, i, mode);
   if (p === "answers") return answersBlocks(doc, c, i, mode);
   if (p === "variants") return variantsBlocks(doc, c, i, mode);
-  if (p === "statements") return (["pnl", "cashflow", "balance"] as const).map((k) => statementBlock(doc, pathFor, i, k, "phase", who));
-  if (p === "takeaways" || p?.takeaways) {
-    const all = p?.takeaways === "all";
-    const rows = sc.lessons.filter((l) => l.takeaway && (all || l.phase === step.phase)).map((l) => [l.title, l.text.replace(/\s+/g, " ").trim()]);
-    return rows.length ? [{ type: "table", title: all ? "Выводы игры" : "Выводы", head: ["Ловушка", "Как избежать"], rows }] : [];
-  }
+  // Отчёты — свои у каждой команды на телефоне; на проекторе — сравнение команд (панель teams).
+  if (p === "statements") return mode.kind === "team" ? (["pnl", "cashflow", "balance"] as const).map((k) => statementBlock(doc, pathFor, i, k, "phase", who)) : [];
   if (p?.variants) return variantsBlocks(doc, c, i, mode, p.variants);
   if (p?.statement) return [statementBlock(doc, pathFor, i, p.statement.kind, p.statement.scope, who)];
   if (p?.metrics) {
@@ -356,7 +364,7 @@ function panelBlocks(doc: SessionDoc, c: Computed, i: number, panel: Json, mode:
     const src = cols.length ? cols : [{ name: "Эталон", r: c.ref }];
     return [
       columnsTable(
-        undefined,
+        p.title,
         src.map(({ name, r }) => ({
           name,
           rows: p.metrics.map((m: any) => [m.label, fmt(sc, safeResolve(m.value, afterCtx(doc, r, i)), m.format)] as [string, string]),
@@ -406,16 +414,14 @@ function safeResolve(v: Json, ctx: unknown): unknown {
   }
 }
 
-function defaultPanels(step: StepDef): Json[] {
-  if (step.block.results?.panels) return step.block.results.panels;
-  if (step.block.type === "summary") return ["statements", "takeaways"];
-  const inputs = step.block.inputs ?? [];
-  const p: Json[] = [];
-  if (inputs.some(isModelInput)) p.push("choices");
-  if (inputs.some((x) => !isModelInput(x))) p.push("answers");
-  if (step.block.variants?.length) p.push("variants");
-  if (step.block.mechanics?.length) p.push("facts");
-  return p;
+/** Ловушки — отдельный экран на проекторе; на телефонах их нет. */
+function takeawaysBlocks(doc: SessionDoc, i: number): Block[] {
+  const sc = doc.scenario;
+  const step = stepAt(doc, i);
+  const p = panelsOf(step).find(isTakeawaysPanel) as any;
+  const all = p?.takeaways === "all";
+  const rows = sc.lessons.filter((l) => l.takeaway && (all || l.phase === step.phase)).map((l) => [l.title, l.text.replace(/\s+/g, " ").trim()]);
+  return rows.length ? [{ type: "table", title: all ? "Ловушки игры" : "Ловушки", head: ["Ловушка", "Как избежать"], rows, text: true }] : [];
 }
 
 function resultsBlocks(doc: SessionDoc, c: Computed, i: number, mode: Mode): Block[] {
@@ -423,8 +429,13 @@ function resultsBlocks(doc: SessionDoc, c: Computed, i: number, mode: Mode): Blo
   const ctx = mode.kind === "team" ? afterCtx(doc, mode.r, i) : null;
   const text = slotText(doc, step, "results", ctx);
   const blocks: Block[] = [];
-  if (text) blocks.push({ type: "html", tone: "results", html: md(doc.scenario, text, afterCtx(doc, mode.kind === "team" ? mode.r : c.ref, i)) });
-  for (const panel of defaultPanels(step)) {
+  if (text)
+    blocks.push({
+      type: "html",
+      tone: "results",
+      html: mode.kind === "team" ? md(doc.scenario, text, afterCtx(doc, mode.r, i)) : sharedText(doc, c, text, (r) => afterCtx(doc, r, i)),
+    });
+  for (const panel of panelsOf(step).filter((p) => !isTakeawaysPanel(p))) {
     try {
       blocks.push(...panelBlocks(doc, c, i, panel, mode));
     } catch (e) {
@@ -434,36 +445,61 @@ function resultsBlocks(doc: SessionDoc, c: Computed, i: number, mode: Mode): Blo
   return blocks;
 }
 
-function legendBlocks(doc: SessionDoc, i: number, r: PathResult): Block[] {
+/**
+ * Общий текст на проекторе: подстановка, одинаковая у всех команд, выводится
+ * числом; разная — «…» (проверка сценария предупреждает об этом, W081).
+ */
+function sharedText(doc: SessionDoc, c: Computed, text: string, ctxOf: (r: PathResult) => unknown): string {
+  const runs = okRuns(doc, c).map((x) => x.r);
+  return mdShared(doc.scenario, text, (runs.length ? runs : [c.ref]).map(ctxOf));
+}
+
+/** Вводная: текст, под ним картинка. Без команды (проектор) — общий текст. */
+function legendBlocks(doc: SessionDoc, i: number, r: PathResult, shared?: Computed): Block[] {
   const step = stepAt(doc, i);
   const blocks: Block[] = [];
-  const img = doc.images[step.id];
-  if (img) blocks.push({ type: "image", src: `/api/images/${img}`, layout: step.block.legend?.layout ?? "side" });
-  const html = md(doc.scenario, step.legend, beforeCtx(doc, r, i));
+  const html = shared ? sharedText(doc, shared, step.legend, (x) => beforeCtx(doc, x, i)) : md(doc.scenario, step.legend, beforeCtx(doc, r, i));
   if (html) blocks.push({ type: "html", tone: "legend", html });
+  const img = doc.images[step.id];
+  if (img) blocks.push({ type: "image", src: `/api/images/${img}`, layout: step.block.legend?.layout ?? "below" });
   return blocks;
 }
 
-/** team = true: условный вариант выбирается по данным команды до хода; проектор — запасной текст. */
-function moveBlocks(doc: SessionDoc, i: number, r: PathResult, team = false): Block[] {
+/** Задание к ходу; без него — вся вводная. shared — проектор: запасной текст без условий, общие числа. */
+function moveBlocks(doc: SessionDoc, i: number, r: PathResult, shared?: Computed): Block[] {
   const step = stepAt(doc, i);
-  const move = slotText(doc, step, "move", team ? beforeCtx(doc, r, i) : null);
-  return move ? [{ type: "html", tone: "move", html: md(doc.scenario, move, beforeCtx(doc, r, i)) }] : legendBlocks(doc, i, r);
+  const move = slotText(doc, step, "move", shared ? null : beforeCtx(doc, r, i));
+  if (!move) return legendBlocks(doc, i, r, shared);
+  const html = shared ? sharedText(doc, shared, move, (x) => beforeCtx(doc, x, i)) : md(doc.scenario, move, beforeCtx(doc, r, i));
+  return [{ type: "html", tone: "move", html }];
 }
 
-function debriefBlocks(doc: SessionDoc, i: number, r: PathResult, withDiscussion: boolean, team = false): Block[] {
+/** Приём ходов на проекторе: вопросы и кто из команд уже ответил (сами ответы не видны). */
+function answeredBlock(doc: SessionDoc, i: number, closed: boolean): Block {
   const step = stepAt(doc, i);
-  const out: Block[] = [];
-  const d = slotText(doc, step, "debrief", team ? afterCtx(doc, r, i) : null);
-  if (d) out.push({ type: "html", tone: "debrief", html: md(doc.scenario, d, afterCtx(doc, r, i)) });
-  const q = withDiscussion ? slotText(doc, step, "discussion", null) : null;
-  if (q) out.push({ type: "html", tone: "discussion", html: md(doc.scenario, q, afterCtx(doc, r, i)) });
-  return out;
+  const inputs = step.block.inputs ?? [];
+  const answered = (t: Team, inp: InputDef) => {
+    const m = moveOf(doc, t, step, inp);
+    return !!m && m.source !== "default";
+  };
+  return {
+    type: "answered",
+    questions: inputs.map((x) => x.label),
+    teams: doc.teams.map((t) => ({ name: t.name, done: inputs.filter((inp) => answered(t, inp)).length })),
+    closed,
+  };
 }
 
-function submittedCount(doc: SessionDoc, i: number): number {
-  const id = stepAt(doc, i).id;
-  return doc.teams.filter((t) => Object.values(doc.moves[t.id]?.[id] ?? {}).some((m) => m.source === "team")).length;
+/** Вопрос залу или вывод. Команда — свой вариант текста и свои числа; проектор — общий текст (sharedText). */
+function slotBlocks(doc: SessionDoc, c: Computed, i: number, slot: "discussion" | "debrief", mode: Mode): Block[] {
+  const step = stepAt(doc, i);
+  const tone = slot === "debrief" ? "debrief" : "discussion";
+  if (mode.kind === "team") {
+    const text = slotText(doc, step, slot, afterCtx(doc, mode.r, i));
+    return text ? [{ type: "html", tone, html: md(doc.scenario, text, afterCtx(doc, mode.r, i)) }] : [];
+  }
+  const text = slotText(doc, step, slot, null);
+  return text ? [{ type: "html", tone, html: sharedText(doc, c, text, (r) => afterCtx(doc, r, i)) }] : [];
 }
 
 // ---------- проектор ----------
@@ -473,12 +509,14 @@ export function screenView(doc: SessionDoc): ScreenView {
   const { step: i, phase } = doc.show;
   const step = stepAt(doc, i);
   let blocks: Block[] = [];
-  if (phase === "legend") blocks = legendBlocks(doc, i, c.ref);
+  if (phase === "legend") blocks = legendBlocks(doc, i, c.ref, c);
   else if (phase === "intake" || phase === "closed")
-    blocks = [...moveBlocks(doc, i, c.ref), { type: "counter", submitted: submittedCount(doc, i), total: doc.teams.length, closed: phase === "closed" || i < doc.play.step }];
+    blocks = [...moveBlocks(doc, i, c.ref, c), answeredBlock(doc, i, phase === "closed" || i < doc.play.step)];
   else if (phase === "results") blocks = resultsBlocks(doc, c, i, { kind: "screen" });
-  else blocks = debriefBlocks(doc, i, c.ref, true);
-  const layout = phase === "legend" && doc.images[step.id] ? (step.block.legend?.layout ?? "side") : "text";
+  else if (phase === "question") blocks = slotBlocks(doc, c, i, "discussion", { kind: "screen" });
+  else if (phase === "debrief") blocks = slotBlocks(doc, c, i, "debrief", { kind: "screen" });
+  else blocks = takeawaysBlocks(doc, i);
+  const layout = phase === "legend" && doc.images[step.id] ? (step.block.legend?.layout ?? "below") : "text";
   return { version: doc.version, header: header(doc, i, phase), layout, blocks, finished: doc.finished };
 }
 
@@ -513,9 +551,9 @@ export function teamView(doc: SessionDoc, team: Team): TeamView {
   if (phase === "legend") blocks = legendBlocks(doc, i, r);
   else if (phase === "intake" || phase === "closed") {
     const fields = (step.block.inputs ?? []).map((inp) => fieldOf(doc, team, step, inp));
-    blocks = [...moveBlocks(doc, i, r, true), { type: "form", stepId: step.id, open: phase === "intake", fields }];
-  } else if (phase === "results") blocks = resultsBlocks(doc, c, i, mode);
-  else blocks = debriefBlocks(doc, i, r, false, true);
+    blocks = [...moveBlocks(doc, i, r), { type: "form", stepId: step.id, open: phase === "intake", fields }];
+  } else if (phase === "results" || phase === "takeaways") blocks = resultsBlocks(doc, c, i, mode);
+  else blocks = slotBlocks(doc, c, i, phase === "question" ? "discussion" : "debrief", mode);
 
   // «Мои дни»: раскрытые шаги с расчётом
   const dayRows: string[][] = [];
@@ -523,9 +561,9 @@ export function teamView(doc: SessionDoc, team: Team): TeamView {
     if (!isRevealed(doc, k) || !s.block.mechanics?.length) return;
     const snap = r.at[s.id];
     const m = snap.metrics as Record<string, number | undefined>;
-    dayRows.push([s.title, withIcon(sc, "people", fmt(sc, m.traffic, "int")), withIcon(sc, "unit", fmt(sc, m.sold, "int")), fmt(sc, snap.pl.day, "money"), fmt(sc, snap.cash, "money")]);
+    dayRows.push([s.title, withIcon(sc, "people", fmt(sc, m.traffic, "int")), soldCell(sc, m), fmt(sc, snap.pl.day, "money"), fmt(sc, snap.cash, "money")]);
   });
-  const days: Block | null = dayRows.length ? { type: "table", head: ["Шаг", "Трафик", "Продано", "Прибыль", "Деньги"], rows: dayRows } : null;
+  const days: Block | null = dayRows.length ? { type: "table", head: ["Шаг", "Трафик", "Продано (в долг)", "Прибыль", "Деньги в кассе"], center: [2], rows: dayRows } : null;
 
   // «Отчёты»: после раскрытых шагов «Итоги»
   const reports: Block[] = [];
@@ -556,7 +594,9 @@ export function controlView(doc: SessionDoc): ControlView {
     intake: "Открыть приём ходов",
     closed: "Закрыть приём",
     results: "Показать результаты",
+    question: "Вопрос залу",
     debrief: "К выводу",
+    takeaways: "Ловушки",
   };
   const next = doc.finished
     ? null
