@@ -150,7 +150,7 @@ describe("5. покрытие и пустые выводы", () => {
     expect(rep.paths).toBe(4608);
     expect(rep.space).toBe(62208);
     expect(rep.partialInputs).toEqual([{ key: "d14_order.prep", samples: 6, values: 81 }]);
-  });
+  }, 30_000); // полный перебор сценария: в общем прогоне тестов дольше 5 с
 
   it("вывод без единой подходящей пары путей — ошибка", () => {
     const text = oneStep(

@@ -54,3 +54,34 @@ mechanics:
     expect(run(11).diagnostics.filter((d) => d.severity === "error")[0]?.message).toContain("own_use 11 больше партии 10");
   });
 });
+
+describe("проверки после прогона 1", () => {
+  const CHOICE = `duration: {min: 1, max: 1}
+inputs:
+  - {id: c, type: choice, label: Выбор, options: [{value: 5, label: дёшево}, {value: 9, label: дорого}], default: 5}
+mechanics:
+  - use: funnel
+    params: {traffic: 10, conversion: 0.5, price: $input.c}
+  - use: on_demand_production
+    params: {unit_cost: 4}`;
+  const report = (md: string) => {
+    const { root, dir } = writeScenario("t", { "scenario.md": md });
+    return validateScenario(dir, root).diagnostics;
+  };
+
+  it("W081: число в общем тексте зависит от хода", () => {
+    const d = report(oneStep(CHOICE, "", "\n### results\n\nВыручка {{pl.lines.revenue}}, людей {{metrics.traffic}}.\n"));
+    expect(d.filter((x) => x.code === "W081").map((x) => x.message)).toEqual([expect.stringContaining("{{pl.lines.revenue}}")]);
+  });
+
+  it("W081 не срабатывает на условный вариант текста", () => {
+    const md = oneStep(CHOICE.replace("inputs:", "conditions:\n  cheap: {expr: {\"==\": [{var: input.c}, 5]}}\ninputs:"), "", "\n### results (if cheap)\n\nВыручка {{pl.lines.revenue}}.\n\n### results\n\nГотово.\n");
+    expect(report(md).filter((x) => x.code === "W081")).toEqual([]);
+  });
+
+  it("sources.by_phase с неизвестной фазой — E040; actual — только у forecast", () => {
+    expect(report(oneStep(STEP, "sources:\n  x: {label: X, by_phase: {nope: Y}}")).filter((x) => x.severity === "error")[0]?.message).toBe("sources.x.by_phase: нет фазы nope");
+    const bad = oneStep(CHOICE.replace("default: 5}", "default: 5, actual: 1}"));
+    expect(report(bad).some((x) => x.code === "E021")).toBe(true);
+  });
+});

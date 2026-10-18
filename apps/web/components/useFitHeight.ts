@@ -1,5 +1,5 @@
 "use client";
-// Слайд проектора целиком помещается по высоте экрана: если содержимое выше,
+// Слайд проектора целиком помещается на экране: если содержимое выше или таблица шире,
 // шрифт слайда уменьшается (не ниже MIN). Размер проектора заранее неизвестен.
 import { type RefObject, useLayoutEffect } from "react";
 
@@ -11,7 +11,9 @@ export function useFitHeight(ref: RefObject<HTMLElement | null>, key: unknown) {
     if (!el) return;
     const fits = (s: number) => {
       el.style.setProperty("--fit", String(s));
-      return el.scrollHeight <= window.innerHeight + 1;
+      if (el.scrollHeight > window.innerHeight + 1) return false;
+      // Таблицы тоже должны влезать по ширине, без горизонтальной прокрутки.
+      return [...el.querySelectorAll<HTMLElement>(".table-wrap")].every((w) => w.scrollWidth <= w.clientWidth + 1);
     };
     const root = document.documentElement;
     const fit = () => {

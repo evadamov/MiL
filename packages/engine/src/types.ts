@@ -35,13 +35,16 @@ export interface InputDef {
   /** Поле доступно только если условие по уже пройденным шагам истинно. */
   when?: Condition;
   options?: { value: string | number; label: string }[];
-  min?: number;
-  max?: number;
+  /** Число или ссылка/выражение по данным команды до хода. */
+  min?: number | Value;
+  max?: number | Value;
   step?: number;
   unit?: string;
   samples?: number[];
   default?: string | number;
   answer?: Value;
+  /** forecast: фактическое значение после раскрытия — для сравнения с прогнозом. */
+  actual?: Value;
   tolerance?: number;
   explain?: string;
 }
@@ -148,7 +151,8 @@ export interface RootBlock {
   params: JsonObject;
   /** Подписи счетов; by_phase — своя подпись в фазе. Счета с одной подписью на слайде складываются в одну строку. */
   accounts?: Record<string, { label: string; by_phase?: Record<string, string> }>;
-  sources?: Record<string, string>;
+  /** Подписи источников движения денег; by_phase — своя подпись в фазе. */
+  sources?: Record<string, string | { label: string; by_phase?: Record<string, string> }>;
   conditions?: Record<string, Condition>;
   reference: string;
 }

@@ -111,7 +111,8 @@ mechanics:
 
 ### results
 
-Продано {{metrics.sold}} стаканов, из них {{metrics.sold_credit}} — в долг.
+Часть стаканов ушла в долг: в «Продано» это число в скобках, деньги за них —
+в дебиторке.
 
 ### trainer
 
@@ -142,6 +143,7 @@ inputs:
     type: forecast
     label: Сколько монет из вчерашних долгов вернут сегодня?
     unit: монет
+    actual: $metrics.collections.returned_amount
 mechanics:
   - use: funnel
     params: {traffic: $p.yard.traffic.wed, conversion: $p.yard.conversion.wed, price: $p.yard.price}
@@ -155,7 +157,8 @@ results:
     - choices
     - answers
     - facts
-    - metrics:
+    - title: Возврат долгов
+      metrics:
         - {label: Вернули долгов, value: $metrics.collections.returned_amount, format: money}
         - {label: Не вернули, value: $metrics.collections.written_off_amount, format: money}
 trainer: {protected: true}
@@ -215,8 +218,6 @@ trainer: {checkpoint: "0:28"}
 
 Неделя во дворе закончилась. Посмотрим на неё целиком: прибыль, движение
 денег и что у Малыша есть на конец недели.
-
-А дальше — парк: людей там в разы больше.
 
 ```sim
 duration: {min: 8, max: 9}

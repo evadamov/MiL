@@ -1,9 +1,9 @@
 // Логика сессии воркшопа (docs/spec.md, п. 3, 6): фазы шага, два указателя —
 // шаг игры и показ на проекторе, приём ходов, значения по умолчанию.
 // Чистые функции над документом сессии; хранение — в store.ts.
-import { InputValueError, evalCondition, isModelInput, normalizeInput, pathDataAt, runPath, type Decisions, type InputDef, type Scenario, type StepDef } from "@mil/engine";
+import { InputValueError, evalCondition, isModelInput, normalizeInput, pathDataAt, runPath, type Decisions, type InputDef, type Json, type Scenario, type StepDef } from "@mil/engine";
 
-export type Phase = "legend" | "intake" | "closed" | "results" | "debrief";
+export type Phase = "legend" | "intake" | "closed" | "results" | "question" | "debrief" | "takeaways";
 export type MoveSource = "team" | "default" | "trainer";
 
 export interface Move {
@@ -54,19 +54,40 @@ export function stepAt(doc: SessionDoc, i: number): StepDef {
 }
 
 export function hasResults(step: StepDef): boolean {
-  return !!(step.block.inputs?.length || step.block.mechanics?.length || step.block.type === "summary");
+  if (step.block.inputs?.length || step.block.mechanics?.length) return true;
+  if (step.block.type !== "summary") return false;
+  // Итоги только с ловушками — без пустого экрана результатов: сразу фаза «ловушки».
+  return hasSlot(step, "results") || panelsOf(step).some((p) => !isTakeawaysPanel(p));
 }
 
-export function hasDebrief(step: StepDef): boolean {
-  return step.slots.some((s) => s.name === "debrief" || s.name === "discussion");
+const hasSlot = (step: StepDef, name: string) => step.slots.some((s) => s.name === name);
+
+/** Панели результатов шага: заданные в сценарии или по типу шага. */
+export function panelsOf(step: StepDef): Json[] {
+  if (step.block.results?.panels) return step.block.results.panels;
+  if (step.block.type === "summary") return ["statements", "takeaways"];
+  const inputs = step.block.inputs ?? [];
+  const p: Json[] = [];
+  if (inputs.some(isModelInput)) p.push("choices");
+  if (inputs.some((x) => !isModelInput(x))) p.push("answers");
+  if (step.block.variants?.length) p.push("variants");
+  if (step.block.mechanics?.length) p.push("facts");
+  return p;
 }
 
-/** Фазы шага в порядке прохождения. */
+export const isTakeawaysPanel = (p: Json) => p === "takeaways" || (!!p && typeof p === "object" && "takeaways" in p);
+
+/**
+ * Фазы шага в порядке прохождения. После результатов — отдельными экранами:
+ * вопрос залу (### discussion), вывод (### debrief), ловушки (панель takeaways).
+ */
 export function phasesOf(step: StepDef): Phase[] {
   const p: Phase[] = ["legend"];
   if (step.block.inputs?.length) p.push("intake", "closed");
   if (hasResults(step)) p.push("results");
-  if (hasDebrief(step)) p.push("debrief");
+  if (hasSlot(step, "discussion")) p.push("question");
+  if (hasSlot(step, "debrief")) p.push("debrief");
+  if (panelsOf(step).some(isTakeawaysPanel)) p.push("takeaways");
   return p;
 }
 
@@ -101,18 +122,22 @@ export function decisionsOf(doc: SessionDoc, teamId: string): Decisions {
   return d;
 }
 
-/** Поля, доступные команде до текущего хода по решениям прошлых шагов. */
-export function availableInputs(doc: SessionDoc, teamId: string): InputDef[] {
-  const step = stepAt(doc, doc.play.step);
+/** Данные команды до текущего хода: условия полей и границы хода считаются по ним. */
+export function teamBefore(doc: SessionDoc, teamId: string): unknown {
   const path = runPath(doc.scenario, decisionsOf(doc, teamId));
-  const ctx = pathDataAt(doc.scenario, path, doc.play.step, false);
+  return pathDataAt(doc.scenario, path, doc.play.step, false);
+}
+
+/** Поля, доступные команде до текущего хода по решениям прошлых шагов. */
+export function availableInputs(doc: SessionDoc, teamId: string, ctx = teamBefore(doc, teamId)): InputDef[] {
+  const step = stepAt(doc, doc.play.step);
   return (step.block.inputs ?? []).filter((inp) => evalCondition(inp.when, step, doc.scenario, ctx));
 }
 
-/** Проверка хода — та же функция, что в движке: одно правило для API, формы и runPath. */
-export function checkValue(inp: InputDef, raw: unknown): string | number {
+/** Проверка хода — та же функция, что в движке: одно правило для API, формы и runPath. ctx — данные команды для границ. */
+export function checkValue(inp: InputDef, raw: unknown, ctx?: unknown): string | number {
   try {
-    return normalizeInput(inp, raw);
+    return normalizeInput(inp, raw, ctx);
   } catch (e) {
     if (e instanceof InputValueError) throw new SessionError(`${inp.label}: ${e.message}`);
     throw e;
@@ -136,13 +161,14 @@ export function addTeam(doc: SessionDoc, name: string, id: string, token: string
 export function submitMove(doc: SessionDoc, teamId: string, stepId: string, values: Record<string, unknown>, now: string): void {
   const step = stepAt(doc, doc.play.step);
   if (step.id !== stepId || doc.play.phase !== "intake") throw new SessionError("приём ходов закрыт", 409);
-  const inputs = availableInputs(doc, teamId);
+  const ctx = teamBefore(doc, teamId);
+  const inputs = availableInputs(doc, teamId, ctx);
   const moves = ((doc.moves[teamId] ??= {})[stepId] ??= {});
   for (const [id, raw] of Object.entries(values)) {
     const inp = inputs.find((x) => x.id === id);
     if (!inp) throw new SessionError(`нет поля ${id}`);
     if (raw === "" || raw === null || raw === undefined) continue;
-    moves[id] = { value: checkValue(inp, raw), at: now, source: "team" };
+    moves[id] = { value: checkValue(inp, raw, ctx), at: now, source: "team" };
   }
 }
 
@@ -190,9 +216,10 @@ export function override(doc: SessionDoc, teamId: string, inputId: string, raw: 
   const step = stepAt(doc, doc.play.step);
   if (doc.play.phase !== "intake" && doc.play.phase !== "closed") throw new SessionError("менять ход можно до раскрытия результатов", 409);
   if (!doc.teams.some((t) => t.id === teamId)) throw new SessionError("нет такой команды");
-  const inp = availableInputs(doc, teamId).find((x) => x.id === inputId);
+  const ctx = teamBefore(doc, teamId);
+  const inp = availableInputs(doc, teamId, ctx).find((x) => x.id === inputId);
   if (!inp) throw new SessionError(`нет поля ${inputId}`);
-  ((doc.moves[teamId] ??= {})[step.id] ??= {})[inputId] = { value: checkValue(inp, raw), at: now, source: "trainer" };
+  ((doc.moves[teamId] ??= {})[step.id] ??= {})[inputId] = { value: checkValue(inp, raw, ctx), at: now, source: "trainer" };
 }
 
 /** Показ на проекторе: любой слайд не дальше шага и фазы игры. */

@@ -28,7 +28,11 @@ export const withIcon = (sc: Scenario, icon: "people" | "unit", text: string) =>
   const i = sc.root.icons?.[icon];
   return i && text !== "—" ? `${text} ${i}` : text;
 };
-export const sourceLabel = (sc: Scenario, s: string) => sc.root.sources?.[s] ?? s;
+export const sourceLabel = (sc: Scenario, s: string, phase?: string) => {
+  const d = sc.root.sources?.[s];
+  if (typeof d === "string") return d;
+  return (phase && d?.by_phase?.[phase]) || d?.label || s;
+};
 
 const nf = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 
@@ -55,8 +59,21 @@ function raw(sc: Scenario, v: number, format?: string): string {
 }
 
 /** Подстановки в тексте сценария. Неизвестная переменная → «—» (валидатор её не пропустит). */
+const TEMPLATE = /\{\{\s*([^}|]+?)\s*(?:\|\s*([^}\s]+)\s*)?\}\}/g;
+
 export function fill(sc: Scenario, text: string, ctx: unknown): string {
-  return text.replace(/\{\{\s*([^}|]+?)\s*(?:\|\s*([^}\s]+)\s*)?\}\}/g, (_m, p: string, f?: string) => fmt(sc, getPath(ctx, p.trim()), f));
+  return text.replace(TEMPLATE, (_m, p: string, f?: string) => fmt(sc, getPath(ctx, p.trim()), f));
+}
+
+/** Подстановки для общего экрана: значение, одинаковое во всех контекстах, — числом, иначе «…». */
+export function mdShared(sc: Scenario, text: string, ctxs: unknown[]): string {
+  const t = text
+    .replace(TEMPLATE, (_m, p: string, f?: string) => {
+      const vals = ctxs.map((c) => fmt(sc, getPath(c, p.trim()), f));
+      return vals.every((v) => v === vals[0]) ? vals[0] : "…";
+    })
+    .trim();
+  return t ? (marked.parse(t, { async: false }) as string) : "";
 }
 
 export function md(sc: Scenario, text: string, ctx: unknown): string {

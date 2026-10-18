@@ -26,7 +26,7 @@ export function HeaderBar({ h, right }: { h: Header; right?: React.ReactNode }) 
 
 export function TableBlock({ b }: { b: Extract<Block, { type: "table" }> }) {
   return (
-    <div className={b.wide ? "card wide" : "card"}>
+    <div className={["card", b.wide && "wide", b.text && "text-table"].filter(Boolean).join(" ")}>
       {b.title && <p className="table-title">{b.title}</p>}
       <div className="table-wrap">
         <table>
@@ -34,7 +34,9 @@ export function TableBlock({ b }: { b: Extract<Block, { type: "table" }> }) {
             <thead>
               <tr>
                 {b.head.map((h, i) => (
-                  <th key={i}>{h}</th>
+                  <th key={i} className={b.center?.includes(i) ? "center" : undefined}>
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -43,7 +45,9 @@ export function TableBlock({ b }: { b: Extract<Block, { type: "table" }> }) {
             {b.rows.map((r, i) => (
               <tr key={i} className={b.highlight?.includes(i) ? "hl" : undefined}>
                 {r.map((c, j) => (
-                  <td key={j}>{c}</td>
+                  <td key={j} className={b.center?.includes(j) ? "center" : undefined}>
+                    {c}
+                  </td>
                 ))}
               </tr>
             ))}
@@ -75,6 +79,49 @@ export function Blocks({ blocks, render }: { blocks: Block[]; render?: (b: Block
                 {b.submitted} из {b.total}
               </div>
             );
+          case "choice":
+            return (
+              <div key={i} className="card choice">
+                <p className="table-title">{b.title}</p>
+                {b.options.map((o) => (
+                  <div key={o.label} className="choice-row">
+                    <span className="choice-label">
+                      {o.label} <span className="muted">· {o.teams.length}</span>
+                    </span>
+                    <span className="chips">
+                      {o.teams.map((t) => (
+                        <span key={t} className="chip on">
+                          {t}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          case "answered": {
+            const ready = b.teams.filter((t) => t.done >= t.total).length;
+            return (
+              <div key={i} className="card answered">
+                {b.questions.map((q, k) => (
+                  <p key={k} className="question">
+                    {q}
+                  </p>
+                ))}
+                <div className="chips">
+                  {b.teams.map((t) => (
+                    <span key={t.name} className={t.done >= t.total ? "chip on" : "chip"}>
+                      {t.done >= t.total ? "✓" : "…"} {t.name}
+                      {t.total > 1 && t.done < t.total ? ` ${t.done}/${t.total}` : ""}
+                    </span>
+                  ))}
+                </div>
+                <p className="muted">
+                  {b.closed ? "Приём закрыт · " : ""}Ответили {ready} из {b.teams.length}
+                </p>
+              </div>
+            );
+          }
           case "error":
             return (
               <div key={i} className="card error">

@@ -134,9 +134,10 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
     }
   };
 
-  for (const [a, def] of Object.entries(sc.root.accounts ?? {}))
-    for (const ph of Object.keys(def.by_phase ?? {}))
-      if (!sc.phases.some((p) => p.id === ph)) diag({ code: "E040", message: `accounts.${a}.by_phase: нет фазы ${ph}`, pos: at(`root/accounts/${a}/by_phase/${ph}`) });
+  for (const [kind, defs] of [["accounts", sc.root.accounts ?? {}], ["sources", sc.root.sources ?? {}]] as const)
+    for (const [a, def] of Object.entries(defs))
+      for (const ph of Object.keys(typeof def === "object" ? (def.by_phase ?? {}) : {}))
+        if (!sc.phases.some((p) => p.id === ph)) diag({ code: "E040", message: `${kind}.${a}.by_phase: нет фазы ${ph}`, pos: at(`root/${kind}/${a}/by_phase/${ph}`) });
   if (!sc.checks.find((c) => c.id === sc.root.reference))
     diag({ code: "E040", message: `reference: нет проверки ${sc.root.reference}`, pos: at("root/reference") });
   else if (sc.checks.find((c) => c.id === sc.root.reference)!.sweep)
@@ -154,6 +155,8 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       ids.add(inp.id);
       // Поле показывается до хода; условие не может зависеть от ответа этого же шага.
       checkCond(inp.when, step, "legend", `${ip}/when`);
+      // Границы из данных команды — в контексте до хода; на путях их проверяет runPath.
+      for (const b of ["min", "max"] as const) if (inp[b] !== undefined && typeof inp[b] !== "number") checkValue(inp[b], step, "legend", `${ip}/${b}`);
       if (isModelInput(inp)) {
         if (inp.default === undefined) diag({ code: "E043", message: `у ${inp.type} ${inp.id} нет default`, pos: at(ip), where: `step ${step.id}` });
         if (inp.type === "number" && !inp.samples) diag({ code: "E043", message: `у number ${inp.id} нет samples`, pos: at(ip), where: `step ${step.id}` });
@@ -278,7 +281,7 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       if (!isModelInput(inp)) continue;
       let values: number | null;
       if (inp.type === "choice") values = inp.options!.length;
-      else values = inp.min !== undefined && inp.max !== undefined && inp.step ? Math.floor((inp.max - inp.min) / inp.step + 1e-9) + 1 : null;
+      else values = typeof inp.min === "number" && typeof inp.max === "number" && inp.step ? Math.floor((inp.max - inp.min) / inp.step + 1e-9) + 1 : null;
       if (inp.type === "number" && (values === null || inp.samples!.length < values))
         report.partialInputs.push({ key: `${s.id}.${inp.id}`, samples: inp.samples!.length, values });
       space = space === null || values === null ? null : space * values;
@@ -352,6 +355,7 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
         if (!Array.isArray(rows)) diag({ code: "E040", message: `tables.${name}.rows — не список`, pos: at(`${ptr}/tables/${name}/rows`) });
       }
       (step.block.inputs ?? []).forEach((inp, i) => {
+        if (inp.type === "forecast" && inp.actual !== undefined) tryResolve(inp.actual, `${ptr}/inputs/${i}/actual`);
         if (inp.type !== "quiz") return;
         try {
           const a = resolveValue(inp.answer as Json, after);
@@ -378,6 +382,35 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
           }
     }
     for (const pg of sc.pages) checkTemplates(pg.text, { p: sc.root.params }, pg.pos, `page ${pg.id}`, diag);
+
+    // Общие тексты на проекторе (вводная и слоты без условия): число, разное у
+    // команд с разными ходами, на проекторе станет «…» — предупреждаем автора.
+    for (const step of sc.steps) {
+      const idx = stepIndex.get(step.id)!;
+      const shown = [
+        { text: step.legend, after: false, pos: step.pos },
+        ...step.slots.filter((s) => !s.cond && s.name !== "trainer" && s.name !== "team").map((s) => ({ text: s.text, after: s.name !== "move", pos: s.pos })),
+      ];
+      for (const t of shown) {
+        const paths = [...new Set([...t.text.matchAll(TEMPLATE_RE)].map((m) => m[1].trim()))];
+        if (!paths.length) continue;
+        const seen = new Map(paths.map((x) => [x, new Set<string>()]));
+        // Текст шага зависит только от ходов до него включительно: по одному пути на сочетание.
+        const upTo = new Set(sc.steps.slice(0, idx + 1).map((s) => s.id));
+        const distinct = new Map<string, PathResult>();
+        for (const { d, r } of runs) {
+          const k = keyOf(Object.fromEntries(Object.entries(d).filter(([key]) => upTo.has(key.split(".")[0]))));
+          if (!distinct.has(k)) distinct.set(k, r);
+        }
+        for (const r of distinct.values()) {
+          const ctx = t.after ? { ...r.at[step.id], ...pathDataAt(sc, r, idx, true), input: r.at[step.id].input } : pathDataAt(sc, r, idx, false);
+          for (const x of paths) seen.get(x)!.add(JSON.stringify(getPath({ ...ctx, p: sc.root.params }, x)));
+        }
+        for (const [x, vals] of seen)
+          if (vals.size > 1)
+            diag({ code: "W081", message: `{{${x}}} в общем тексте зависит от ходов команд — на проекторе будет «…»; числа команд — в таблицах или в условных вариантах текста`, pos: t.pos, where: `step ${step.id}` });
+      }
+    }
   }
 
   // ---------- выводы ----------
@@ -483,13 +516,16 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
   return report;
 }
 
+/** Подстановка {{путь}} или {{путь | формат}}. */
+const TEMPLATE_RE = /\{\{\s*([^}|]+?)\s*(?:\|\s*([^}\s]+)\s*)?\}\}/g;
+
 function fmtDecisions(d: Decisions, omit?: string): string {
   const e = Object.entries(d).filter(([k, v]) => k !== omit && v !== null && v !== undefined);
   return e.length ? e.map(([k, v]) => `${k}=${v}`).join(", ") : "все по умолчанию";
 }
 
 function checkTemplates(text: string, ctx: unknown, pos: Pos, where: string, diag: (d: Omit<Diagnostic, "severity">) => void) {
-  for (const m of text.matchAll(/\{\{\s*([^}|]+?)\s*(?:\|\s*([^}\s]+)\s*)?\}\}/g)) {
+  for (const m of text.matchAll(TEMPLATE_RE)) {
     const [, p, fmt] = m;
     if (fmt && !FORMATS.has(fmt)) diag({ code: "E080", message: `неизвестный формат «${fmt}» в {{${p} | ${fmt}}}`, pos, where });
     if (getPath(ctx, p) === undefined) diag({ code: "E080", message: `{{${p}}}: нет такой переменной в этот момент шага`, pos, where });

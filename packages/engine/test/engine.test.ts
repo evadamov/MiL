@@ -102,6 +102,27 @@ inputs:
     expect(runPath(sc, { "sell.qty": 10, "collect.extra": "yes" }).inputs.collect.extra).toBeNull();
   });
 
+  it("граница хода из данных команды: прогноз возврата не больше её дебиторки", () => {
+    const collect = `duration: {min: 1, max: 1}
+inputs:
+  - {id: back, type: forecast, label: Сколько вернут, min: 0, max: $at.sell.balance.receivables}`;
+    const sc = compileOk("t", { "scenario.md": twoSteps(SELL, collect) });
+    // qty 20: в долг 10 стаканов по 10 — дебиторка 100; qty 10: в долг 2 — дебиторка 20.
+    expect(runPath(sc, { "sell.qty": 20, "collect.back": 50 }).inputs.collect.back).toBe(50);
+    expect(() => runPath(sc, { "sell.qty": 10, "collect.back": 50 })).toThrow(expect.objectContaining({ code: "E071", message: expect.stringContaining("не больше 20") }));
+  });
+
+  it("граница-ссылка на текущий шаг — ошибка проверки: до хода её нет", async () => {
+    const { validateScenario } = await import("../src/validate.ts");
+    const { writeScenario } = await import("./helpers.ts");
+    const collect = `duration: {min: 1, max: 1}
+inputs:
+  - {id: back, type: forecast, label: Сколько вернут, max: $at.collect.cash}`;
+    const { root, dir } = writeScenario("t", { "scenario.md": twoSteps(SELL, collect) });
+    const errs = validateScenario(dir, root).diagnostics.filter((d) => d.severity === "error");
+    expect(errs).toContainEqual(expect.objectContaining({ code: "E041", message: "шаг collect ещё не посчитан в этот момент" }));
+  });
+
   it("ход вне диапазона и чужой вариант — ошибка исполнения", () => {
     const sc = compileOk("t", { "scenario.md": twoSteps(SELL, "duration: {min: 1, max: 1}") });
     expect(() => runPath(sc, { "sell.qty": 500 })).toThrow(EngineError);

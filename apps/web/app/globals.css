@@ -106,18 +106,19 @@ tr.hl td { background: var(--accent-soft); font-weight: 600; }
 .screen { min-height: 100vh; padding: 3vh 4vw; font-size: calc(clamp(18px, 1.6vw, 30px) * var(--fit, 1)); display: flex; flex-direction: column; }
 .screen .header { font-size: 0.75em; }
 .screen h2 { font-size: 1.6em; margin: 0.2em 0 0.6em; }
-.screen .body { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26em), 1fr)); gap: 0 1em; align-content: start; }
-.screen .body > .html, .screen .body > .counter, .screen .body > .slide-side, .screen .body > .slide-full, .screen .body > .slide-below, .screen .body > .error { grid-column: 1 / -1; }
+/* Блоки слайда — друг под другом во всю ширину: узкие колонки при сжатии шрифта сужались и росли в высоту. */
+.screen .body { flex: 1; display: flex; flex-direction: column; }
+
 .screen .card { margin: 0.4em 0; }
 .screen .card { padding: 0.7em 0.9em; }
 .screen table { font-size: 0.85em; }
 .screen th { font-size: 0.85em; }
 /* Таблица по командам — на всю ширину слайда; числа со значками не переносятся. */
-.screen .body > .card.wide { grid-column: 1 / -1; }
+
 .screen .wide td:not(:first-child) { white-space: nowrap; }
 .screen .wide th, .screen .wide td { padding: 0.25em 0.5em; }
-.screen .wide td:first-child { max-width: 12em; overflow-wrap: anywhere; }
-.screen .counter { font-size: 2.2em; }
+.screen .wide td:first-child { max-width: 12em; overflow-wrap: break-word; }
+.screen .counter { font-size: 1.2em; }
 .slide-side { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 2em; align-items: start; }
 .slide-full img { width: 100%; max-height: 72vh; object-fit: contain; }
 /* Картинка под текстом и сложенная «сбоку» на узком экране не выталкивают текст за край слайда. */
@@ -132,3 +133,20 @@ tr.hl td { background: var(--accent-soft); font-weight: 600; }
 .steps .step { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; padding: 3px 0; }
 .notice { background: var(--warn-soft); color: var(--warn); border-radius: var(--radius); padding: 10px 14px; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
 @media (max-width: 900px) { .control, .slide-side { grid-template-columns: 1fr; } .slide-side img { max-height: 45vh; object-fit: contain; } }
+
+/* Приём ходов на проекторе: вопрос и кто ответил */
+.answered .question { font-weight: 600; margin: 0 0 0.5em; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.4em; margin: 0.4em 0 0.6em; }
+.chip { border: 1px solid var(--line); border-radius: 99px; padding: 0.15em 0.7em; color: var(--muted); white-space: nowrap; }
+.chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+/* Текстовые таблицы (ловушки) — все колонки по левому краю */
+.text-table td, .text-table th { text-align: left !important; }
+th.center, td.center { text-align: center !important; }
+/* Выбор команд на проекторе: вариант и команды значками */
+.choice-row { display: flex; gap: 0.8em; align-items: baseline; flex-wrap: wrap; padding: 0.3em 0; border-bottom: 1px solid var(--line); }
+.choice-row:last-child { border-bottom: 0; }
+.choice-label { min-width: 12em; font-weight: 600; }
+.choice-row .chips { margin: 0; }
+/* На проекторе без горизонтальной прокрутки: ширину подгоняет автосжатие (useFitHeight). */
+.screen .table-wrap { overflow-x: hidden; }
+.tone-team { border-left: 4px solid var(--muted); }

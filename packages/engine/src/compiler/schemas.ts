@@ -12,6 +12,14 @@ const condition = {
     { type: "object", required: ["expr"], additionalProperties: false, properties: { expr: {} } },
   ],
 } as const;
+/** Граница числового хода: число, ссылка "$…" или {expr} — из данных команды до хода. */
+const bound = {
+  oneOf: [
+    { type: "number" },
+    { type: "string", pattern: "^\\$[a-z]" },
+    { type: "object", required: ["expr"], additionalProperties: false, properties: { expr: {} } },
+  ],
+} as const;
 const column = {
   type: "object",
   required: ["label", "value"],
@@ -58,7 +66,12 @@ export const rootSchema = {
         properties: { label: str, by_phase: { type: "object", additionalProperties: str } },
       },
     },
-    sources: { type: "object", additionalProperties: str },
+    sources: {
+      type: "object",
+      additionalProperties: {
+        oneOf: [str, { type: "object", required: ["label"], additionalProperties: false, properties: { label: str, by_phase: { type: "object", additionalProperties: str } } }],
+      },
+    },
     conditions: { type: "object", additionalProperties: condition },
     reference: id,
   },
@@ -78,13 +91,14 @@ const input = {
       minItems: 2,
       items: { type: "object", required: ["value", "label"], additionalProperties: false, properties: { value: scalar, label: str } },
     },
-    min: { type: "number" },
-    max: { type: "number" },
+    min: bound,
+    max: bound,
     step: { type: "number", exclusiveMinimum: 0 },
     unit: str,
     samples: { type: "array", minItems: 1, items: { type: "number" } },
     default: scalar,
     answer: {},
+    actual: {},
     tolerance: { type: "number", minimum: 0 },
     explain: str,
   },
@@ -92,6 +106,7 @@ const input = {
     { if: { properties: { type: { const: "choice" } } }, then: { required: ["options"] } },
     { if: { properties: { type: { const: "quiz" } } }, then: { required: ["answer"], not: { required: ["default"] } } },
     { if: { properties: { type: { const: "forecast" } } }, then: { not: { anyOf: [{ required: ["default"] }, { required: ["answer"] }] } } },
+    { if: { not: { properties: { type: { const: "forecast" } } } }, then: { not: { required: ["actual"] } } },
   ],
 } as const;
 
@@ -100,11 +115,16 @@ const panel = {
     { enum: ["facts", "choices", "answers", "variants", "statements", "takeaways"] },
     {
       type: "object",
+      required: ["metrics"],
+      additionalProperties: false,
+      properties: { metrics: { type: "array", minItems: 1, items: column }, title: str },
+    },
+    {
+      type: "object",
       minProperties: 1,
       maxProperties: 1,
       additionalProperties: false,
       properties: {
-        metrics: { type: "array", minItems: 1, items: column },
         table: id,
         variants: id,
         takeaways: { const: "all" },

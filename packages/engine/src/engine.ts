@@ -67,7 +67,22 @@ export class InputValueError extends Error {}
  * Единая проверка значения хода — для движка, API и веб-формы.
  * Возвращает нормализованное значение: вариант choice в его исходном типе, число.
  */
-export function normalizeInput(inp: InputDef, raw: unknown): string | number {
+/**
+ * Границы хода числами: заданные ссылкой или выражением вычисляются по данным
+ * команды до хода (ctx). Без ctx динамическая граница не проверяется.
+ */
+export function inputBounds(inp: InputDef, ctx?: unknown): { min?: number; max?: number } {
+  const one = (b: InputDef["min"], name: string): number | undefined => {
+    if (b === undefined || typeof b === "number") return b;
+    if (ctx === undefined) return undefined;
+    const v = resolveValue(b as Json, ctx);
+    if (typeof v !== "number" || !Number.isFinite(v)) throw new LogicError(`${name} поля ${inp.id} — не число: ${JSON.stringify(v)}`);
+    return v;
+  };
+  return { min: one(inp.min, "min"), max: one(inp.max, "max") };
+}
+
+export function normalizeInput(inp: InputDef, raw: unknown, ctx?: unknown): string | number {
   if (inp.type === "choice") {
     const opt = inp.options!.find((o) => String(o.value) === String(raw));
     if (!opt) throw new InputValueError(`нет варианта ${JSON.stringify(raw)}`);
@@ -75,17 +90,19 @@ export function normalizeInput(inp: InputDef, raw: unknown): string | number {
   }
   const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw.trim().replace(",", ".")) : NaN;
   if (!Number.isFinite(n)) throw new InputValueError(`нужно число, получено ${JSON.stringify(raw)}`);
-  if (inp.min !== undefined && n < inp.min) throw new InputValueError(`не меньше ${inp.min}, получено ${n}`);
-  if (inp.max !== undefined && n > inp.max) throw new InputValueError(`не больше ${inp.max}, получено ${n}`);
+  const { min, max } = inputBounds(inp, ctx);
+  if (min !== undefined && n < min) throw new InputValueError(`не меньше ${min}, получено ${n}`);
+  if (max !== undefined && n > max) throw new InputValueError(`не больше ${max}, получено ${n}`);
   if (inp.type === "number" && inp.step) {
-    const k = (n - (inp.min ?? 0)) / inp.step;
-    if (Math.abs(k - Math.round(k)) > 1e-9) throw new InputValueError(`шаг ${inp.step}${inp.min ? ` от ${inp.min}` : ""}, получено ${n}`);
+    const base = typeof inp.min === "number" ? inp.min : 0;
+    const k = (n - base) / inp.step;
+    if (Math.abs(k - Math.round(k)) > 1e-9) throw new InputValueError(`шаг ${inp.step}${base ? ` от ${base}` : ""}, получено ${n}`);
   }
   return n;
 }
 
 /** Значение хода: решение команды, иначе default для решений и null для квизов и прогнозов. */
-export function inputValue(step: StepDef, inp: InputDef, decisions: Decisions): string | number | null {
+export function inputValue(step: StepDef, inp: InputDef, decisions: Decisions, ctx?: unknown): string | number | null {
   const key = `${step.id}.${inp.id}`;
   const given = key in decisions ? decisions[key] : undefined;
   const missing = given === undefined || given === null;
@@ -94,9 +111,10 @@ export function inputValue(step: StepDef, inp: InputDef, decisions: Decisions): 
   if (v === undefined) return null;
   // И ход, и значение по умолчанию проходят одну проверку.
   try {
-    return normalizeInput(inp, v);
+    return normalizeInput(inp, v, ctx);
   } catch (e) {
     if (e instanceof InputValueError) throw new EngineError(missing ? "E043" : "E071", `${key}${missing ? " (default)" : ""}: ${e.message}`, step.id);
+    if (e instanceof RefError || e instanceof LogicError) throw new EngineError("E041", `${key}: граница хода не вычислилась: ${e.message}`, step.id);
     throw e;
   }
 }
@@ -129,7 +147,7 @@ export function runPath(sc: Scenario, decisions: Decisions): PathResult {
     const input: Record<string, string | number | null> = {};
     const beforeInput = { p, inputs: result.inputs, at: result.at };
     for (const inp of step.block.inputs ?? [])
-      input[inp.id] = evalCondition(inp.when, step, sc, beforeInput) ? inputValue(step, inp, decisions) : null;
+      input[inp.id] = evalCondition(inp.when, step, sc, beforeInput) ? inputValue(step, inp, decisions, beforeInput) : null;
     result.inputs[sid] = input;
 
     const firstEntry = ledger.journal.length;
