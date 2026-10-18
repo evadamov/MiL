@@ -122,18 +122,22 @@ export function decisionsOf(doc: SessionDoc, teamId: string): Decisions {
   return d;
 }
 
-/** Поля, доступные команде до текущего хода по решениям прошлых шагов. */
-export function availableInputs(doc: SessionDoc, teamId: string): InputDef[] {
-  const step = stepAt(doc, doc.play.step);
+/** Данные команды до текущего хода: условия полей и границы хода считаются по ним. */
+export function teamBefore(doc: SessionDoc, teamId: string): unknown {
   const path = runPath(doc.scenario, decisionsOf(doc, teamId));
-  const ctx = pathDataAt(doc.scenario, path, doc.play.step, false);
+  return pathDataAt(doc.scenario, path, doc.play.step, false);
+}
+
+/** Поля, доступные команде до текущего хода по решениям прошлых шагов. */
+export function availableInputs(doc: SessionDoc, teamId: string, ctx = teamBefore(doc, teamId)): InputDef[] {
+  const step = stepAt(doc, doc.play.step);
   return (step.block.inputs ?? []).filter((inp) => evalCondition(inp.when, step, doc.scenario, ctx));
 }
 
-/** Проверка хода — та же функция, что в движке: одно правило для API, формы и runPath. */
-export function checkValue(inp: InputDef, raw: unknown): string | number {
+/** Проверка хода — та же функция, что в движке: одно правило для API, формы и runPath. ctx — данные команды для границ. */
+export function checkValue(inp: InputDef, raw: unknown, ctx?: unknown): string | number {
   try {
-    return normalizeInput(inp, raw);
+    return normalizeInput(inp, raw, ctx);
   } catch (e) {
     if (e instanceof InputValueError) throw new SessionError(`${inp.label}: ${e.message}`);
     throw e;
@@ -157,13 +161,14 @@ export function addTeam(doc: SessionDoc, name: string, id: string, token: string
 export function submitMove(doc: SessionDoc, teamId: string, stepId: string, values: Record<string, unknown>, now: string): void {
   const step = stepAt(doc, doc.play.step);
   if (step.id !== stepId || doc.play.phase !== "intake") throw new SessionError("приём ходов закрыт", 409);
-  const inputs = availableInputs(doc, teamId);
+  const ctx = teamBefore(doc, teamId);
+  const inputs = availableInputs(doc, teamId, ctx);
   const moves = ((doc.moves[teamId] ??= {})[stepId] ??= {});
   for (const [id, raw] of Object.entries(values)) {
     const inp = inputs.find((x) => x.id === id);
     if (!inp) throw new SessionError(`нет поля ${id}`);
     if (raw === "" || raw === null || raw === undefined) continue;
-    moves[id] = { value: checkValue(inp, raw), at: now, source: "team" };
+    moves[id] = { value: checkValue(inp, raw, ctx), at: now, source: "team" };
   }
 }
 
@@ -211,9 +216,10 @@ export function override(doc: SessionDoc, teamId: string, inputId: string, raw: 
   const step = stepAt(doc, doc.play.step);
   if (doc.play.phase !== "intake" && doc.play.phase !== "closed") throw new SessionError("менять ход можно до раскрытия результатов", 409);
   if (!doc.teams.some((t) => t.id === teamId)) throw new SessionError("нет такой команды");
-  const inp = availableInputs(doc, teamId).find((x) => x.id === inputId);
+  const ctx = teamBefore(doc, teamId);
+  const inp = availableInputs(doc, teamId, ctx).find((x) => x.id === inputId);
   if (!inp) throw new SessionError(`нет поля ${inputId}`);
-  ((doc.moves[teamId] ??= {})[step.id] ??= {})[inputId] = { value: checkValue(inp, raw), at: now, source: "trainer" };
+  ((doc.moves[teamId] ??= {})[step.id] ??= {})[inputId] = { value: checkValue(inp, raw, ctx), at: now, source: "trainer" };
 }
 
 /** Показ на проекторе: любой слайд не дальше шага и фазы игры. */

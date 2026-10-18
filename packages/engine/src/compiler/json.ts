@@ -7,7 +7,7 @@ import type { CheckDef, Diagnostic, Frontmatter, LessonDef, PageDef, PhaseDef, P
 import { check, type CompileResult, v } from "./compile.ts";
 import { parseYamlBlock, type RawBlock } from "./parse.ts";
 
-const SLOT_NAMES = new Set(["move", "results", "debrief", "discussion", "trainer"]);
+const SLOT_NAMES = new Set(["move", "results", "debrief", "discussion", "team", "trainer"]);
 const ID = /^[a-z][a-z0-9_]*$/;
 const TOP_KEYS = new Set(["meta", "description", "root", "phases", "steps", "pages", "lessons", "checks"]);
 

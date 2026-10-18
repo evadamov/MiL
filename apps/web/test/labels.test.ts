@@ -60,7 +60,7 @@ describe("экраны после прогона 1", () => {
     submitMove(doc, "ta", "d2", { jug: "buy" }, NOW);
     const a = screenView(doc).blocks.find((b) => b.type === "answered") as any;
     expect(a.questions).toEqual(["Покупаем второй кувшин?"]);
-    expect(a.teams).toEqual([{ name: "Альфа", done: 1 }, { name: "Бета", done: 0 }]);
+    expect(a.teams).toEqual([{ name: "Альфа", done: 1, total: 1 }, { name: "Бета", done: 0, total: 1 }]);
   });
 
   it("общий текст: число, разное у команд, — «…»; одинаковое — числом", () => {
@@ -122,4 +122,68 @@ it("mdShared: разные значения — «…», одинаковые �
   const { mdShared } = await import("../lib/render");
   const sc = compileScenario(path.join(REPO, "scenarios/lemonade"), REPO).scenario!;
   expect(mdShared(sc, "Продано {{a}}, трафик {{b}}", [{ a: 15, b: 35 }, { a: 30, b: 35 }])).toBe("<p>Продано …, трафик 35</p>\n");
+});
+
+it("приём ходов: у команды без второго кувшина — только её вопрос", () => {
+  const doc = lemonade();
+  addTeam(doc, "Бета", "tb", "t2", NOW);
+  goto(doc, "d2", "intake");
+  submitMove(doc, "ta", "d2", { jug: "buy" }, NOW);
+  submitMove(doc, "tb", "d2", { jug: "skip" }, NOW);
+  goto(doc, "d3", "intake");
+  submitMove(doc, "tb", "d3", { collected_forecast: 20 }, NOW);
+  const a = screenView(doc).blocks.find((b) => b.type === "answered") as any;
+  expect(a.teams).toEqual([{ name: "Альфа", done: 0, total: 2 }, { name: "Бета", done: 1, total: 1 }]);
+});
+
+it("граница прогноза из данных команды: сервер не принимает больше дебиторки, форма получает max", () => {
+  const doc = lemonade();
+  addTeam(doc, "Бета", "tb", "t2", NOW);
+  const d3 = doc.scenario.steps.find((s) => s.id === "d3")!;
+  d3.block.inputs!.find((x) => x.id === "collected_forecast")!.max = "$at.d2.balance.receivables";
+  goto(doc, "d2", "intake");
+  submitMove(doc, "ta", "d2", { jug: "buy" }, NOW);
+  submitMove(doc, "tb", "d2", { jug: "skip" }, NOW);
+  goto(doc, "d3", "intake");
+  expect(() => submitMove(doc, "tb", "d3", { collected_forecast: 50 }, NOW)).toThrow(/не больше 30/);
+  submitMove(doc, "ta", "d3", { collected_forecast: 50 }, NOW);
+  const form = teamView(doc, doc.teams[1]).blocks.find((b) => b.type === "form") as any;
+  expect(form.fields.find((f: any) => f.id === "collected_forecast").max).toBe(30);
+});
+
+describe("прогон 2: телефоны и проектор", () => {
+  const setup = () => {
+    const doc = lemonade();
+    addTeam(doc, "Бета", "tb", "t2", NOW);
+    goto(doc, "d2", "intake");
+    submitMove(doc, "ta", "d2", { jug: "buy" }, NOW);
+    submitMove(doc, "tb", "d2", { jug: "skip" }, NOW);
+    return doc;
+  };
+
+  it("### team — только на телефоне, начиная с результатов", () => {
+    const doc = setup();
+    const d6 = doc.scenario.steps.find((s) => s.id === "d6")!;
+    d6.slots.push({ name: "team", text: "Разбор для команды.", pos: d6.pos });
+    goto(doc, "d6", "legend");
+    const has = (blocks: any[]) => blocks.some((b) => b.type === "html" && b.html.includes("Разбор для команды."));
+    expect(has(teamView(doc, doc.teams[0]).blocks)).toBe(false);
+    goto(doc, "d6", "results");
+    expect(has(teamView(doc, doc.teams[0]).blocks)).toBe(true);
+    expect(has(screenView(doc).blocks)).toBe(false);
+    goto(doc, "d6", "question");
+    expect(has(teamView(doc, doc.teams[0]).blocks)).toBe(true);
+  });
+
+  it("сравнение команд — не на телефоне; недоступное условное поле — «—»", () => {
+    const doc = setup();
+    const d6 = doc.scenario.steps.find((s) => s.id === "d6")!;
+    (d6.block.results!.panels as any[]).find((p) => p?.teams).teams.columns.push({ label: "Среда", value: "$inputs.d3.prep" });
+    goto(doc, "d3", "intake");
+    submitMove(doc, "ta", "d3", { prep: "two_jugs", collected_forecast: 40 }, NOW);
+    goto(doc, "d6", "results");
+    expect(teamView(doc, doc.teams[0]).blocks.some((b: any) => b.title === "Команды")).toBe(false);
+    const t = screenView(doc).blocks.find((b: any) => b.title === "Команды") as any;
+    expect(t.rows.map((r: string[]) => r.at(-1))).toEqual(["Оба — 30 стаканов", "—"]);
+  });
 });

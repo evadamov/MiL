@@ -34,12 +34,12 @@ export interface RawFile {
 
 const H1 = /^# (phase|info|lessons|checks)(?: ([a-z][a-z0-9_]*))?(?: · (.+))?$/;
 const H2 = /^## (step|page|lesson|check) ([a-z][a-z0-9_]*) · (.+)$/;
-const H3 = /^### (move|results|debrief|discussion|trainer)(?: \(if (!?[a-z][a-z0-9_]*)\))?$/;
+const H3 = /^### (move|results|debrief|discussion|team|trainer)(?: \(if (!?[a-z][a-z0-9_]*)\))?$/;
 const H2_PARENT: Record<string, string> = { step: "phase", page: "info", lesson: "lessons", check: "checks" };
 const FENCE = /^(`{3,}|~{3,})\s*([^`\s]*)\s*$/;
 
 function hint(line: string): string {
-  if (line.startsWith("### ")) return "### move | results | debrief | discussion | trainer [(if <условие>)]";
+  if (line.startsWith("### ")) return "### move | results | debrief | discussion | team | trainer [(if <условие>)]";
   if (line.startsWith("## ")) return "## step|page|lesson|check <id> · <название>";
   return "# phase <id> · <название> | # info | # lessons | # checks";
 }

@@ -1,9 +1,10 @@
 // Блоки экранов: сервер собирает, клиент только рисует.
 export type Block =
-  | { type: "html"; html: string; tone?: "legend" | "move" | "results" | "debrief" | "discussion" | "trainer" | "note" }
+  | { type: "html"; html: string; tone?: "legend" | "move" | "results" | "debrief" | "discussion" | "team" | "trainer" | "note" }
   | { type: "image"; src: string; layout: "side" | "below" | "full" | "text" }
   | { type: "table"; title?: string; head: string[]; rows: string[][]; highlight?: number[]; note?: string; compact?: boolean; wide?: boolean; text?: boolean; center?: number[] }
-  | { type: "answered"; questions: string[]; teams: { name: string; done: number }[]; closed: boolean }
+  | { type: "choice"; title: string; options: { label: string; teams: string[] }[] }
+  | { type: "answered"; questions: string[]; teams: { name: string; done: number; total: number }[]; closed: boolean }
   | { type: "counter"; submitted: number; total: number; closed: boolean }
   | { type: "form"; stepId: string; open: boolean; fields: Field[] }
   | { type: "error"; message: string };

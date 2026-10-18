@@ -12,6 +12,14 @@ const condition = {
     { type: "object", required: ["expr"], additionalProperties: false, properties: { expr: {} } },
   ],
 } as const;
+/** Граница числового хода: число, ссылка "$…" или {expr} — из данных команды до хода. */
+const bound = {
+  oneOf: [
+    { type: "number" },
+    { type: "string", pattern: "^\\$[a-z]" },
+    { type: "object", required: ["expr"], additionalProperties: false, properties: { expr: {} } },
+  ],
+} as const;
 const column = {
   type: "object",
   required: ["label", "value"],
@@ -83,8 +91,8 @@ const input = {
       minItems: 2,
       items: { type: "object", required: ["value", "label"], additionalProperties: false, properties: { value: scalar, label: str } },
     },
-    min: { type: "number" },
-    max: { type: "number" },
+    min: bound,
+    max: bound,
     step: { type: "number", exclusiveMinimum: 0 },
     unit: str,
     samples: { type: "array", minItems: 1, items: { type: "number" } },

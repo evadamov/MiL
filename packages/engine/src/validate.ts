@@ -155,6 +155,8 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       ids.add(inp.id);
       // Поле показывается до хода; условие не может зависеть от ответа этого же шага.
       checkCond(inp.when, step, "legend", `${ip}/when`);
+      // Границы из данных команды — в контексте до хода; на путях их проверяет runPath.
+      for (const b of ["min", "max"] as const) if (inp[b] !== undefined && typeof inp[b] !== "number") checkValue(inp[b], step, "legend", `${ip}/${b}`);
       if (isModelInput(inp)) {
         if (inp.default === undefined) diag({ code: "E043", message: `у ${inp.type} ${inp.id} нет default`, pos: at(ip), where: `step ${step.id}` });
         if (inp.type === "number" && !inp.samples) diag({ code: "E043", message: `у number ${inp.id} нет samples`, pos: at(ip), where: `step ${step.id}` });
@@ -279,7 +281,7 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       if (!isModelInput(inp)) continue;
       let values: number | null;
       if (inp.type === "choice") values = inp.options!.length;
-      else values = inp.min !== undefined && inp.max !== undefined && inp.step ? Math.floor((inp.max - inp.min) / inp.step + 1e-9) + 1 : null;
+      else values = typeof inp.min === "number" && typeof inp.max === "number" && inp.step ? Math.floor((inp.max - inp.min) / inp.step + 1e-9) + 1 : null;
       if (inp.type === "number" && (values === null || inp.samples!.length < values))
         report.partialInputs.push({ key: `${s.id}.${inp.id}`, samples: inp.samples!.length, values });
       space = space === null || values === null ? null : space * values;
@@ -387,7 +389,7 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       const idx = stepIndex.get(step.id)!;
       const shown = [
         { text: step.legend, after: false, pos: step.pos },
-        ...step.slots.filter((s) => !s.cond && s.name !== "trainer").map((s) => ({ text: s.text, after: s.name !== "move", pos: s.pos })),
+        ...step.slots.filter((s) => !s.cond && s.name !== "trainer" && s.name !== "team").map((s) => ({ text: s.text, after: s.name !== "move", pos: s.pos })),
       ];
       for (const t of shown) {
         const paths = [...new Set([...t.text.matchAll(TEMPLATE_RE)].map((m) => m[1].trim()))];

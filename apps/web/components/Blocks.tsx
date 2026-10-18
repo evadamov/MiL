@@ -79,9 +79,28 @@ export function Blocks({ blocks, render }: { blocks: Block[]; render?: (b: Block
                 {b.submitted} из {b.total}
               </div>
             );
+          case "choice":
+            return (
+              <div key={i} className="card choice">
+                <p className="table-title">{b.title}</p>
+                {b.options.map((o) => (
+                  <div key={o.label} className="choice-row">
+                    <span className="choice-label">
+                      {o.label} <span className="muted">· {o.teams.length}</span>
+                    </span>
+                    <span className="chips">
+                      {o.teams.map((t) => (
+                        <span key={t} className="chip on">
+                          {t}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
           case "answered": {
-            const total = b.questions.length;
-            const ready = b.teams.filter((t) => t.done === total).length;
+            const ready = b.teams.filter((t) => t.done >= t.total).length;
             return (
               <div key={i} className="card answered">
                 {b.questions.map((q, k) => (
@@ -91,9 +110,9 @@ export function Blocks({ blocks, render }: { blocks: Block[]; render?: (b: Block
                 ))}
                 <div className="chips">
                   {b.teams.map((t) => (
-                    <span key={t.name} className={t.done === total ? "chip on" : "chip"}>
-                      {t.done === total ? "✓" : "…"} {t.name}
-                      {total > 1 && t.done < total ? ` ${t.done}/${total}` : ""}
+                    <span key={t.name} className={t.done >= t.total ? "chip on" : "chip"}>
+                      {t.done >= t.total ? "✓" : "…"} {t.name}
+                      {t.total > 1 && t.done < t.total ? ` ${t.done}/${t.total}` : ""}
                     </span>
                   ))}
                 </div>

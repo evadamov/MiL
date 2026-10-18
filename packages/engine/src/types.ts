@@ -35,8 +35,9 @@ export interface InputDef {
   /** Поле доступно только если условие по уже пройденным шагам истинно. */
   when?: Condition;
   options?: { value: string | number; label: string }[];
-  min?: number;
-  max?: number;
+  /** Число или ссылка/выражение по данным команды до хода. */
+  min?: number | Value;
+  max?: number | Value;
   step?: number;
   unit?: string;
   samples?: number[];

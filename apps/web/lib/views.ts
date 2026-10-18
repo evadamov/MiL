@@ -4,6 +4,7 @@ import {
   ACCOUNTS,
   cashFlow,
   evalCondition,
+  inputBounds,
   isModelInput,
   pathDataAt,
   pnlLines,
@@ -183,15 +184,15 @@ function choicesBlocks(doc: SessionDoc, i: number, mode: Mode): Block[] {
       const m = moveOf(doc, mode.team, step, inp);
       return { type: "table", title: inp.label, head: ["Ваш ход"], rows: [[label(sc, m?.value, inp.options) + mark(m?.source)]] } as Block;
     }
+    // Выбор на проекторе: вариант и команды значками — компактно при любом числе команд.
     if (inp.type === "choice")
       return {
-        type: "table",
+        type: "choice",
         title: inp.label,
-        head: ["Вариант", "Команд", "Кто"],
-        rows: inp.options!.map((o) => {
-          const who = doc.teams.filter((t) => String(moveOf(doc, t, step, inp)?.value) === String(o.value));
-          return [o.label, String(who.length), who.map((t) => t.name + mark(moveOf(doc, t, step, inp)?.source)).join(", ")];
-        }),
+        options: inp.options!.map((o) => ({
+          label: o.label,
+          teams: doc.teams.filter((t) => String(moveOf(doc, t, step, inp)?.value) === String(o.value)).map((t) => t.name + mark(moveOf(doc, t, step, inp)?.source)),
+        })),
       } as Block;
     return {
       type: "table",
@@ -392,7 +393,9 @@ function panelBlocks(doc: SessionDoc, c: Computed, i: number, panel: Json, mode:
     ];
   }
   if (p?.teams) {
-    const runs = okRuns(doc, c).filter(({ team }) => mode.kind === "screen" || team.id === mode.team.id);
+    // Сравнение команд — только на проекторе: у команды в нём одна своя строка, те же цифры есть в отчётах.
+    if (mode.kind === "team") return [];
+    const runs = okRuns(doc, c);
     return [
       {
         type: "table",
@@ -487,10 +490,19 @@ function answeredBlock(doc: SessionDoc, i: number, closed: boolean): Block {
     const m = moveOf(doc, t, step, inp);
     return !!m && m.source !== "default";
   };
+  // У каждой команды — только её поля: условное поле (when) другим командам не показывается.
+  const c = compute(doc);
+  const own = (t: Team) => {
+    const r = c.teams.get(t.id);
+    return r && !(r instanceof Error) ? inputs.filter((inp) => evalCondition(inp.when, step, doc.scenario, beforeCtx(doc, r, i))) : inputs.filter((inp) => inp.when === undefined);
+  };
   return {
     type: "answered",
     questions: inputs.map((x) => x.label),
-    teams: doc.teams.map((t) => ({ name: t.name, done: inputs.filter((inp) => answered(t, inp)).length })),
+    teams: doc.teams.map((t) => {
+      const mine = own(t);
+      return { name: t.name, done: mine.filter((inp) => answered(t, inp)).length, total: mine.length };
+    }),
     closed,
   };
 }
@@ -527,15 +539,23 @@ export function screenView(doc: SessionDoc): ScreenView {
 
 // ---------- команда ----------
 
-function fieldOf(doc: SessionDoc, team: Team, step: StepDef, inp: InputDef): Field {
+/** Границы поля числами по данным команды; не вычислились — без границы (сервер всё равно проверит). */
+function safeBounds(inp: InputDef, ctx: unknown): { min?: number; max?: number } {
+  try {
+    return inputBounds(inp, ctx);
+  } catch {
+    return {};
+  }
+}
+
+function fieldOf(doc: SessionDoc, team: Team, step: StepDef, inp: InputDef, ctx: unknown): Field {
   const m = moveOf(doc, team, step, inp);
   return {
     id: inp.id,
     type: inp.type,
     label: inp.label,
     unit: inp.unit,
-    min: inp.min,
-    max: inp.max,
+    ...safeBounds(inp, ctx),
     step: inp.step,
     options: inp.options?.map((o) => ({ value: String(o.value), label: o.label })),
     value: m ? String(m.value) : undefined,
@@ -557,10 +577,15 @@ export function teamView(doc: SessionDoc, team: Team): TeamView {
   else if (phase === "intake" || phase === "closed") {
     const fields = (step.block.inputs ?? [])
       .filter((inp) => evalCondition(inp.when, step, sc, beforeCtx(doc, r, i)))
-      .map((inp) => fieldOf(doc, team, step, inp));
+      .map((inp) => fieldOf(doc, team, step, inp, beforeCtx(doc, r, i)));
     blocks = [...moveBlocks(doc, i, r), { type: "form", stepId: step.id, open: phase === "intake", fields }];
   } else if (phase === "results" || phase === "takeaways") blocks = resultsBlocks(doc, c, i, mode);
   else blocks = slotBlocks(doc, c, i, phase === "question" ? "discussion" : "debrief", mode);
+  // ### team — разбор только для телефонов команд: после раскрытия, на проекторе его нет.
+  if (phase !== "legend" && phase !== "intake" && phase !== "closed") {
+    const own = slotText(doc, step, "team", afterCtx(doc, r, i));
+    if (own) blocks.push({ type: "html", tone: "team", html: md(sc, own, afterCtx(doc, r, i)) });
+  }
 
   // «Мои дни»: раскрытые шаги с расчётом
   const dayRows: string[][] = [];
@@ -666,8 +691,9 @@ export function controlView(doc: SessionDoc): ControlView {
       type: inp.type,
       label: inp.label,
       unit: inp.unit,
-      min: inp.min,
-      max: inp.max,
+      // На пульте — только постоянные границы; ход ведущего проверяет сервер по данным команды.
+      min: typeof inp.min === "number" ? inp.min : undefined,
+      max: typeof inp.max === "number" ? inp.max : undefined,
       step: inp.step,
       options: inp.options?.map((o) => ({ value: String(o.value), label: o.label })),
     })),

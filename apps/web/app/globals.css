@@ -142,3 +142,11 @@ tr.hl td { background: var(--accent-soft); font-weight: 600; }
 /* Текстовые таблицы (ловушки) — все колонки по левому краю */
 .text-table td, .text-table th { text-align: left !important; }
 th.center, td.center { text-align: center !important; }
+/* Выбор команд на проекторе: вариант и команды значками */
+.choice-row { display: flex; gap: 0.8em; align-items: baseline; flex-wrap: wrap; padding: 0.3em 0; border-bottom: 1px solid var(--line); }
+.choice-row:last-child { border-bottom: 0; }
+.choice-label { min-width: 12em; font-weight: 600; }
+.choice-row .chips { margin: 0; }
+/* На проекторе без горизонтальной прокрутки: ширину подгоняет автосжатие (useFitHeight). */
+.screen .table-wrap { overflow-x: hidden; }
+.tone-team { border-left: 4px solid var(--muted); }
