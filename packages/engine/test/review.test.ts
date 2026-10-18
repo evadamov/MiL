@@ -145,10 +145,10 @@ mechanics:
 });
 
 describe("5. покрытие и пустые выводы", () => {
-  it("лимонад: 2304 пути из 31 104 сочетаний, prep — по samples, 6 из 81", () => {
+  it("лимонад: 4608 путей из 62 208 сочетаний, заказ парка — по samples, 6 из 81", () => {
     const rep = validateScenario(path.join(REPO, "scenarios/lemonade"), REPO);
-    expect(rep.paths).toBe(2304);
-    expect(rep.space).toBe(31104);
+    expect(rep.paths).toBe(4608);
+    expect(rep.space).toBe(62208);
     expect(rep.partialInputs).toEqual([{ key: "d14_order.prep", samples: 6, values: 81 }]);
   });
 

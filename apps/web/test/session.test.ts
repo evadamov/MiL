@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   addTeam,
   advance,
+  availableInputs,
   isRevealed,
   newSession,
   override,
@@ -67,9 +68,36 @@ describe("приём ходов", () => {
     submitMove(doc, "t0", "d3", { collected_forecast: 30 }, NOW);
     advance(doc, NOW); // → closed
     expect(doc.moves.t1?.d3?.collected_forecast).toBeUndefined();
+    expect(doc.moves.t1?.d3?.prep).toBeUndefined();
     goto(doc, "d9", "intake");
     advance(doc, NOW);
     expect(doc.moves.t2.d9.cola_price).toMatchObject({ value: 6, source: "default" });
+  });
+
+  it("второй кувшин даёт выбор заготовки только его владельцу", () => {
+    const doc = session("lemonade", ["С кувшином", "Без кувшина"]);
+    goto(doc, "d2", "intake");
+    submitMove(doc, "t0", "d2", { jug: "buy" }, NOW);
+    submitMove(doc, "t1", "d2", { jug: "skip" }, NOW);
+    goto(doc, "d3", "intake");
+    expect(availableInputs(doc, "t0").map((x) => x.id)).toEqual(["prep", "collected_forecast"]);
+    expect(availableInputs(doc, "t1").map((x) => x.id)).toEqual(["collected_forecast"]);
+    expect((teamView(bump(doc), doc.teams[0]).blocks.find((b) => b.type === "form") as any).fields.map((f: any) => f.id)).toContain("prep");
+    expect((teamView(doc, doc.teams[1]).blocks.find((b) => b.type === "form") as any).fields.map((f: any) => f.id)).not.toContain("prep");
+    expect(() => submitMove(doc, "t1", "d3", { prep: "two_jugs" }, NOW)).toThrow(/нет поля prep/);
+    submitMove(doc, "t0", "d3", { prep: "two_jugs" }, NOW);
+    goto(doc, "d3", "results");
+    const owner = teamView(bump(doc), doc.teams[0]);
+    const without = teamView(doc, doc.teams[1]);
+    expect((owner.days as any).rows.at(-1).at(-1)).toMatch(/80/);
+    expect((without.days as any).rows.at(-1).at(-1)).toMatch(/115/);
+    expect(without.blocks.some((b) => b.type === "table" && b.title?.includes("кувшинов"))).toBe(false);
+  });
+
+  it("если никто не купил второй кувшин, общий экран не показывает выбор заготовки", () => {
+    const doc = session("lemonade", ["Один кувшин"]);
+    goto(doc, "d3", "results");
+    expect(screenView(bump(doc)).blocks.some((b) => b.type === "table" && b.title?.includes("кувшинов"))).toBe(false);
   });
 
   it("продление снимает подставленные значения; ведущий может поменять ход до раскрытия", () => {
@@ -121,13 +149,14 @@ describe("экраны", () => {
       const step = stepAt(doc, doc.play.step);
       if (doc.play.phase === "intake") {
         const values: Record<string, unknown> = {};
-        for (const inp of step.block.inputs ?? []) {
+        for (const inp of availableInputs(doc, "t0")) {
           const key = `${step.id}.${inp.id}`;
           if (key in ref) values[inp.id] = ref[key];
           else if (inp.type === "quiz" || inp.type === "forecast") values[inp.id] = 4;
         }
         submitMove(doc, "t0", step.id, values, NOW); // t0 — эталонная команда
-        if (step.block.inputs?.some((x) => x.type === "choice")) submitMove(doc, "t1", step.id, { [step.block.inputs!.find((x) => x.type === "choice")!.id]: step.block.inputs!.find((x) => x.type === "choice")!.options![0].value }, NOW);
+        const choice = availableInputs(doc, "t1").find((x) => x.type === "choice");
+        if (choice) submitMove(doc, "t1", step.id, { [choice.id]: choice.options![0].value }, NOW);
       }
       bump(doc);
       for (const v of [screenView(doc), teamView(doc, doc.teams[0]), teamView(doc, doc.teams[2]), controlView(doc).preview]) {

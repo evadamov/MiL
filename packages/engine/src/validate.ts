@@ -152,6 +152,8 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       const ip = `${ptr}/inputs/${i}`;
       if (ids.has(inp.id)) diag({ code: "E012", message: `повтор поля ${inp.id}`, pos: at(ip) });
       ids.add(inp.id);
+      // Поле показывается до хода; условие не может зависеть от ответа этого же шага.
+      checkCond(inp.when, step, "legend", `${ip}/when`);
       if (isModelInput(inp)) {
         if (inp.default === undefined) diag({ code: "E043", message: `у ${inp.type} ${inp.id} нет default`, pos: at(ip), where: `step ${step.id}` });
         if (inp.type === "number" && !inp.samples) diag({ code: "E043", message: `у number ${inp.id} нет samples`, pos: at(ip), where: `step ${step.id}` });

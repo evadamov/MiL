@@ -32,6 +32,8 @@ export interface InputDef {
   id: string;
   type: InputType;
   label: string;
+  /** Поле доступно только если условие по уже пройденным шагам истинно. */
+  when?: Condition;
   options?: { value: string | number; label: string }[];
   min?: number;
   max?: number;

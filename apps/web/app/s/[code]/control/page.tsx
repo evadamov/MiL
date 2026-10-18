@@ -146,7 +146,9 @@ function TeamRow({ t, phase, inputs, canOverride, onOverride }: { t: ControlTeam
             <div className="muted" style={{ fontSize: "0.75rem" }}>
               {v.label}
             </div>
-            {canOverride && inp.type === "choice" ? (
+            {!v.active ? (
+              <span>{v.value}</span>
+            ) : canOverride && inp.type === "choice" ? (
               <select className="input" value={v.raw ?? ""} onChange={(e) => onOverride(v.inputId, e.target.value)}>
                 <option value="" disabled>
                   —

@@ -54,7 +54,7 @@ export interface ControlTeam {
   id: string;
   name: string;
   submitted: boolean;
-  values: { inputId: string; label: string; value: string; source: string; raw?: string }[];
+  values: { inputId: string; label: string; value: string; source: string; raw?: string; active: boolean }[];
 }
 
 export interface ControlView {

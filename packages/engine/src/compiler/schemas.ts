@@ -72,6 +72,7 @@ const input = {
     id,
     type: { enum: ["choice", "number", "quiz", "forecast"] },
     label: str,
+    when: condition,
     options: {
       type: "array",
       minItems: 2,

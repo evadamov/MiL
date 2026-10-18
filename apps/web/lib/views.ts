@@ -166,7 +166,12 @@ function moveOf(doc: SessionDoc, team: Team, step: StepDef, inp: InputDef) {
 function choicesBlocks(doc: SessionDoc, i: number, mode: Mode): Block[] {
   const sc = doc.scenario;
   const step = stepAt(doc, i);
-  const inputs = (step.block.inputs ?? []).filter(isModelInput);
+  const inputs = (step.block.inputs ?? []).filter((inp) => {
+    if (!isModelInput(inp) || inp.when === undefined) return isModelInput(inp);
+    if (mode.kind === "team") return evalCondition(inp.when, step, sc, beforeCtx(doc, mode.r, i));
+    const runs = okRuns(doc, compute(doc));
+    return runs.length === 0 || runs.some(({ r }) => evalCondition(inp.when, step, sc, beforeCtx(doc, r, i)));
+  });
   return inputs.map((inp) => {
     const mark = (src?: string) => (src === "default" ? " · по умолчанию" : src === "trainer" ? " · ведущий" : "");
     if (mode.kind === "team") {
@@ -512,7 +517,9 @@ export function teamView(doc: SessionDoc, team: Team): TeamView {
   let blocks: Block[];
   if (phase === "legend") blocks = legendBlocks(doc, i, r);
   else if (phase === "intake" || phase === "closed") {
-    const fields = (step.block.inputs ?? []).map((inp) => fieldOf(doc, team, step, inp));
+    const fields = (step.block.inputs ?? [])
+      .filter((inp) => evalCondition(inp.when, step, sc, beforeCtx(doc, r, i)))
+      .map((inp) => fieldOf(doc, team, step, inp));
     blocks = [...moveBlocks(doc, i, r, true), { type: "form", stepId: step.id, open: phase === "intake", fields }];
   } else if (phase === "results") blocks = resultsBlocks(doc, c, i, mode);
   else blocks = debriefBlocks(doc, i, r, false, true);
@@ -547,6 +554,7 @@ export function teamView(doc: SessionDoc, team: Team): TeamView {
 // ---------- пульт ----------
 
 export function controlView(doc: SessionDoc): ControlView {
+  const computed = compute(doc);
   const sc = doc.scenario;
   const { step: i, phase } = doc.play;
   const step = stepAt(doc, i);
@@ -572,12 +580,17 @@ export function controlView(doc: SessionDoc): ControlView {
     submitted: Object.values(doc.moves[t.id]?.[step.id] ?? {}).some((m) => m.source === "team"),
     values: inputs.map((inp) => {
       const m = moveOf(doc, t, step, inp);
+      const r = computed.teams.get(t.id);
+      const active = r && !(r instanceof Error)
+        ? evalCondition(inp.when, step, sc, beforeCtx(doc, r, i))
+        : inp.when === undefined;
       return {
         inputId: inp.id,
         label: inp.label,
-        value: m ? label(sc, m.value, inp.options) : isModelInput(inp) ? "—" : "нет ответа",
+        value: !active ? "не требуется" : m ? label(sc, m.value, inp.options) : isModelInput(inp) ? "—" : "нет ответа",
         raw: m ? String(m.value) : undefined,
         source: m?.source ?? "",
+        active,
       };
     }),
   }));

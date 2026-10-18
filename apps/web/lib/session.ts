@@ -1,7 +1,7 @@
 // Логика сессии воркшопа (docs/spec.md, п. 3, 6): фазы шага, два указателя —
 // шаг игры и показ на проекторе, приём ходов, значения по умолчанию.
 // Чистые функции над документом сессии; хранение — в store.ts.
-import { InputValueError, isModelInput, normalizeInput, type Decisions, type InputDef, type Scenario, type StepDef } from "@mil/engine";
+import { InputValueError, evalCondition, isModelInput, normalizeInput, pathDataAt, runPath, type Decisions, type InputDef, type Scenario, type StepDef } from "@mil/engine";
 
 export type Phase = "legend" | "intake" | "closed" | "results" | "debrief";
 export type MoveSource = "team" | "default" | "trainer";
@@ -101,6 +101,14 @@ export function decisionsOf(doc: SessionDoc, teamId: string): Decisions {
   return d;
 }
 
+/** Поля, доступные команде до текущего хода по решениям прошлых шагов. */
+export function availableInputs(doc: SessionDoc, teamId: string): InputDef[] {
+  const step = stepAt(doc, doc.play.step);
+  const path = runPath(doc.scenario, decisionsOf(doc, teamId));
+  const ctx = pathDataAt(doc.scenario, path, doc.play.step, false);
+  return (step.block.inputs ?? []).filter((inp) => evalCondition(inp.when, step, doc.scenario, ctx));
+}
+
 /** Проверка хода — та же функция, что в движке: одно правило для API, формы и runPath. */
 export function checkValue(inp: InputDef, raw: unknown): string | number {
   try {
@@ -128,7 +136,7 @@ export function addTeam(doc: SessionDoc, name: string, id: string, token: string
 export function submitMove(doc: SessionDoc, teamId: string, stepId: string, values: Record<string, unknown>, now: string): void {
   const step = stepAt(doc, doc.play.step);
   if (step.id !== stepId || doc.play.phase !== "intake") throw new SessionError("приём ходов закрыт", 409);
-  const inputs = step.block.inputs ?? [];
+  const inputs = availableInputs(doc, teamId);
   const moves = ((doc.moves[teamId] ??= {})[stepId] ??= {});
   for (const [id, raw] of Object.entries(values)) {
     const inp = inputs.find((x) => x.id === id);
@@ -172,7 +180,7 @@ export function reopen(doc: SessionDoc): void {
 function fillDefaults(doc: SessionDoc, step: StepDef, now: string): void {
   for (const team of doc.teams) {
     const m = ((doc.moves[team.id] ??= {})[step.id] ??= {});
-    for (const inp of step.block.inputs ?? [])
+    for (const inp of availableInputs(doc, team.id))
       if (isModelInput(inp) && !m[inp.id] && inp.default !== undefined) m[inp.id] = { value: inp.default, at: now, source: "default" };
   }
 }
@@ -182,7 +190,7 @@ export function override(doc: SessionDoc, teamId: string, inputId: string, raw: 
   const step = stepAt(doc, doc.play.step);
   if (doc.play.phase !== "intake" && doc.play.phase !== "closed") throw new SessionError("менять ход можно до раскрытия результатов", 409);
   if (!doc.teams.some((t) => t.id === teamId)) throw new SessionError("нет такой команды");
-  const inp = step.block.inputs?.find((x) => x.id === inputId);
+  const inp = availableInputs(doc, teamId).find((x) => x.id === inputId);
   if (!inp) throw new SessionError(`нет поля ${inputId}`);
   ((doc.moves[teamId] ??= {})[step.id] ??= {})[inputId] = { value: checkValue(inp, raw), at: now, source: "trainer" };
 }

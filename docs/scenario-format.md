@@ -267,6 +267,12 @@ inputs:
     unit: стаканов
     samples: [15, 19, 25, 30, 40, 50]   # что перебирает проверка
     default: 30
+  - id: fill_second
+    type: choice
+    label: Наполнить второй кувшин?
+    when: {expr: {"==": [{var: inputs.d2.jug}, buy]}}
+    options: [{value: yes, label: Да}, {value: no, label: Нет}]
+    default: no
   - id: breakeven
     type: quiz
     label: Сколько бутылок нужно продать, чтобы выйти в ноль?
@@ -300,6 +306,11 @@ inputs:
 Для `choice` и `number` обязательны `default` (`E043`), для `number` —
 `samples`. На `quiz` и `forecast` механики ссылаться не могут (`E044`).
 Ход отправляется одной формой: все поля шага сразу.
+
+`when` у поля проверяется **до хода** по параметрам и уже пройденным шагам.
+Если условие ложно, команда не видит поле, сервер не принимает ответ и не
+подставляет `default`; в снимке шага значение поля равно `null`. Поле не
+может зависеть от ответа или результатов своего шага.
 
 **Нет ответа.** Ведущий может закрыть приём, когда ответили не все
 ([spec.md](spec.md), п. 3.1). Поле без ответа:
@@ -516,8 +527,9 @@ kind: contrast
 contrast: {input: d2.jug, a: buy, b: skip}
 assert:
   and:
-    - {">": [{var: a.at.d3.pl.cumulative}, {var: b.at.d3.pl.cumulative}]}
-    - {"<": [{var: a.at.d3.cash}, {var: b.at.d3.cash}]}
+    - {">": [{var: a.at.d2.pl.cumulative}, {var: b.at.d2.pl.cumulative}]}
+    - {"<": [{var: a.at.d2.cash}, {var: b.at.d2.cash}]}
+    - {">": [{var: a.at.d3.pl.lines.bad_debt}, {var: b.at.d3.pl.lines.bad_debt}]}
 ```
 ````
 
