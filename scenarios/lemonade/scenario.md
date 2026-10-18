@@ -35,7 +35,7 @@ params:
     own_cups_mon: 1               # Малыш выпивает сам в понедельник
     second_jug_price: 15
     traffic: {mon: 21, wed: 19, thu: 21, fri: 20}
-    conversion: {mon: 0.67, wed: 0.74, thu: 0.67, fri: 0.9}
+    conversion: {mon: 0.81, wed: 0.74, thu: 0.67, fri: 0.9}
   park:
     loan: 500
     equipment: 330
@@ -101,9 +101,10 @@ reference: reference_team
 
 | Параметр | Значение |
 |---|---:|
-| Цена стакана | {{p.yard.price}} |
-| Ингредиенты на стакан | {{p.yard.cup_cost}} |
-| Кувшин | {{p.yard.jug_cups}} стаканов |
+| Цена стакана | {{p.yard.price}} монет |
+| Лимонада в кувшине | {{p.yard.jug_cups}} стаканов |
+| Платёж маме за приготовленный кувшин | 30 монет |
+| Стоимость одного стакана | {{p.yard.cup_cost}} монеты |
 
 Мама утром готовит кувшин целиком — {{p.yard.jug_cups}} стаканов, ещё до того,
 как видно, сколько купят. Платим за весь кувшин; что не продалось,
@@ -399,6 +400,7 @@ decisions:
   d14_order.prep: 19
 expect:
   at.d1.metrics.traffic: 21
+  at.d1.metrics.demand: 17
   at.d1.metrics.sold: 14
   at.d1.pl.day: 40
   at.d1.cash: 40

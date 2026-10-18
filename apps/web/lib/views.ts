@@ -581,8 +581,11 @@ export function teamView(doc: SessionDoc, team: Team): TeamView {
     blocks = [...moveBlocks(doc, i, r), { type: "form", stepId: step.id, open: phase === "intake", fields }];
   } else if (phase === "results" || phase === "takeaways") blocks = resultsBlocks(doc, c, i, mode);
   else blocks = slotBlocks(doc, c, i, phase === "question" ? "discussion" : "debrief", mode);
-  // ### team — разбор только для телефонов команд: после раскрытия, на проекторе его нет.
-  if (phase !== "legend" && phase !== "intake" && phase !== "closed") {
+  // ### team — при наличии ловушек открывается только на последнем экране.
+  const showTeam = phasesOf(step).includes("takeaways")
+    ? phase === "takeaways"
+    : phase !== "legend" && phase !== "intake" && phase !== "closed";
+  if (showTeam) {
     const own = slotText(doc, step, "team", afterCtx(doc, r, i));
     if (own) blocks.push({ type: "html", tone: "team", html: md(sc, own, afterCtx(doc, r, i)) });
   }

@@ -161,16 +161,19 @@ describe("прогон 2: телефоны и проектор", () => {
     return doc;
   };
 
-  it("### team — только на телефоне, начиная с результатов", () => {
+  it("### team — только на телефоне и только вместе с ловушками", () => {
     const doc = setup();
     goto(doc, "d6", "legend");
     const has = (blocks: any[]) => blocks.some((b) => b.type === "html" && b.html.includes("Для разбора после обсуждения."));
     expect(has(teamView(doc, doc.teams[0]).blocks)).toBe(false);
     goto(doc, "d6", "results");
-    expect(has(teamView(doc, doc.teams[0]).blocks)).toBe(true);
+    expect(has(teamView(doc, doc.teams[0]).blocks)).toBe(false);
     expect(has(screenView(doc).blocks)).toBe(false);
     goto(doc, "d6", "question");
+    expect(has(teamView(doc, doc.teams[0]).blocks)).toBe(false);
+    goto(doc, "d6", "takeaways");
     expect(has(teamView(doc, doc.teams[0]).blocks)).toBe(true);
+    expect(has(screenView(doc).blocks)).toBe(false);
   });
 
   it("сравнение команд — не на телефоне; недоступное условное поле — «—»", () => {
