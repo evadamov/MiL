@@ -68,7 +68,7 @@ describe("экраны после прогона 1", () => {
     goto(doc, "d2", "intake");
     submitMove(doc, "ta", "d2", { jug: "buy" }, NOW);
     goto(doc, "d5", "results");
-    expect(html(doc)).toContain("Купили 18 человек");
+    expect(html(doc)).toContain("Купили 18 стаканов");
   });
 
   it("прогноз: медиана из двух — среднее; рядом факт", () => {
@@ -77,16 +77,16 @@ describe("экраны после прогона 1", () => {
     submitMove(doc, "ta", "d2", { jug: "buy" }, NOW);
     goto(doc, "d3", "intake");
     submitMove(doc, "ta", "d3", { collected_forecast: 30 }, NOW);
-    submitMove(doc, "tb", "d3", { collected_forecast: 60 }, NOW);
+    submitMove(doc, "tb", "d3", { collected_forecast: 20 }, NOW);
     goto(doc, "d3", "results");
     const t = screenView(doc).blocks.find((b) => b.type === "table" && b.title?.startsWith("Сколько монет")) as any;
     expect(t.head).toEqual(["Команда", "Прогноз", "Факт"]);
-    expect(t.rows).toEqual([["Альфа", "30 монет", "35 монет"], ["Бета", "60 монет", "20 монет"]]);
-    expect(t.note).toContain("медиана 45");
+    expect(t.rows).toEqual([["Альфа", "30 монет", "35 монет"], ["Бета", "20 монет", "20 монет"]]);
+    expect(t.note).toContain("медиана 25");
   });
 
   it("вопрос и вывод — отдельные экраны, вопрос первым", () => {
-    // В лимонаде v19 нет шага с обоими слотами — шаг собираем из Д5 с вопросом и выводом.
+    // Проверяем порядок фаз на отдельном примере с обоими слотами.
     const doc = two();
     const d5 = doc.scenario.steps.find((s) => s.id === "d5")!;
     d5.slots.push({ name: "debrief", text: "Скидку получили все.", pos: d5.pos }, { name: "discussion", text: "Почему прибыль меньше?", pos: d5.pos });
@@ -102,7 +102,7 @@ describe("экраны после прогона 1", () => {
     goto(doc, "d6", "results");
     const titles = screenView(doc).blocks.map((b: any) => b.title);
     expect(titles).toEqual(["Команды"]);
-    goto(doc, "d6_lessons", "takeaways");
+    goto(doc, "d6", "takeaways");
     expect(teamView(doc, doc.teams[0]).blocks.some((b: any) => b.title === "Ловушки")).toBe(false);
     const tk = screenView(doc).blocks[0] as any;
     expect(tk).toMatchObject({ title: "Ловушки", text: true });
@@ -163,10 +163,8 @@ describe("прогон 2: телефоны и проектор", () => {
 
   it("### team — только на телефоне, начиная с результатов", () => {
     const doc = setup();
-    const d6 = doc.scenario.steps.find((s) => s.id === "d6")!;
-    d6.slots.push({ name: "team", text: "Разбор для команды.", pos: d6.pos });
     goto(doc, "d6", "legend");
-    const has = (blocks: any[]) => blocks.some((b) => b.type === "html" && b.html.includes("Разбор для команды."));
+    const has = (blocks: any[]) => blocks.some((b) => b.type === "html" && b.html.includes("Для разбора после обсуждения."));
     expect(has(teamView(doc, doc.teams[0]).blocks)).toBe(false);
     goto(doc, "d6", "results");
     expect(has(teamView(doc, doc.teams[0]).blocks)).toBe(true);
@@ -177,13 +175,12 @@ describe("прогон 2: телефоны и проектор", () => {
 
   it("сравнение команд — не на телефоне; недоступное условное поле — «—»", () => {
     const doc = setup();
-    const d6 = doc.scenario.steps.find((s) => s.id === "d6")!;
-    (d6.block.results!.panels as any[]).find((p) => p?.teams).teams.columns.push({ label: "Среда", value: "$inputs.d3.prep" });
     goto(doc, "d3", "intake");
     submitMove(doc, "ta", "d3", { prep: "two_jugs", collected_forecast: 40 }, NOW);
     goto(doc, "d6", "results");
     expect(teamView(doc, doc.teams[0]).blocks.some((b: any) => b.title === "Команды")).toBe(false);
     const t = screenView(doc).blocks.find((b: any) => b.title === "Команды") as any;
-    expect(t.rows.map((r: string[]) => r.at(-1))).toEqual(["Оба — 30 стаканов", "—"]);
+    const prepColumn = t.head.indexOf("Заготовка в среду");
+    expect(t.rows.map((r: string[]) => r[prepColumn])).toEqual(["Оба — 30 стаканов", "—"]);
   });
 });
