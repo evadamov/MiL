@@ -274,6 +274,12 @@ inputs:
     unit: стаканов
     samples: [15, 19, 25, 30, 40, 50]   # что перебирает проверка
     default: 30
+  - id: fill_second
+    type: choice
+    label: Наполнить второй кувшин?
+    when: {expr: {"==": [{var: inputs.d2.jug}, buy]}}
+    options: [{value: yes, label: Да}, {value: no, label: Нет}]
+    default: no
   - id: breakeven
     type: quiz
     label: Сколько бутылок нужно продать, чтобы выйти в ноль?
@@ -307,6 +313,11 @@ inputs:
 Для `choice` и `number` обязательны `default` (`E043`), для `number` —
 `samples`. На `quiz` и `forecast` механики ссылаться не могут (`E044`).
 Ход отправляется одной формой: все поля шага сразу.
+
+`when` у поля проверяется **до хода** по параметрам и уже пройденным шагам.
+Если условие ложно, команда не видит поле, сервер не принимает ответ и не
+подставляет `default`; в снимке шага значение поля равно `null`. Поле не
+может зависеть от ответа или результатов своего шага.
 
 **Нет ответа.** Ведущий может закрыть приём, когда ответили не все
 ([spec.md](spec.md), п. 3.1). Поле без ответа:
@@ -523,8 +534,9 @@ kind: contrast
 contrast: {input: d2.jug, a: buy, b: skip}
 assert:
   and:
-    - {">": [{var: a.at.d3.pl.cumulative}, {var: b.at.d3.pl.cumulative}]}
-    - {"<": [{var: a.at.d3.cash}, {var: b.at.d3.cash}]}
+    - {">": [{var: a.at.d2.pl.cumulative}, {var: b.at.d2.pl.cumulative}]}
+    - {"<": [{var: a.at.d2.cash}, {var: b.at.d2.cash}]}
+    - {">": [{var: a.at.d3.pl.lines.bad_debt}, {var: b.at.d3.pl.lines.bad_debt}]}
 ```
 ````
 
@@ -659,6 +671,7 @@ scenarios/lemonade/scenario.md:31:1  E070  lesson revenue_is_not_cash › assert
     {
       "id": "fri", "title": "Пятница", "phase": "weekend",
       "legend": "Текст вводной",
+      "visual": {"image": "assets/fri.png", "layout": "below"},
       "slots": [ { "name": "move", "text": "Задание к ходу" },
                  { "name": "results", "cond": "jug_bought", "text": "…" } ],
       "duration": {"min": 6, "max": 7},
@@ -681,6 +694,7 @@ scenarios/lemonade/scenario.md:31:1  E070  lesson revenue_is_not_cash › assert
 | `# phase id · название` и её текст, слоты | `phases[]`: `id`, `title`, `text`, `slots` |
 | `## step id · название` | `steps[]`: `id`, `title`, `phase` |
 | текст шага до первого `###` | `steps[].legend` |
+| `legend` в блоке `sim` (картинка и раскладка) | `steps[].visual` |
 | `### имя (if условие)` | `steps[].slots[]`: `name`, `cond`, `text` |
 | блок `sim` шага | поля шага рядом: `duration`, `inputs`, `mechanics`, … |
 | `## page`, `## lesson`, `## check` | `pages[]`, `lessons[]`, `checks[]`; поля блока рядом с `id`, `title`, `text` |

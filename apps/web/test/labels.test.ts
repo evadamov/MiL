@@ -86,9 +86,12 @@ describe("экраны после прогона 1", () => {
   });
 
   it("вопрос и вывод — отдельные экраны, вопрос первым", () => {
+    // В лимонаде v19 нет шага с обоими слотами — шаг собираем из Д5 с вопросом и выводом.
     const doc = two();
+    const d5 = doc.scenario.steps.find((s) => s.id === "d5")!;
+    d5.slots.push({ name: "debrief", text: "Скидку получили все.", pos: d5.pos }, { name: "discussion", text: "Почему прибыль меньше?", pos: d5.pos });
     goto(doc, "d5", "question");
-    expect(html(doc)).toContain("почему прибыль меньше");
+    expect(html(doc)).toContain("Почему прибыль меньше?");
     expect(html(doc)).not.toContain("Скидку получили все");
     goto(doc, "d5", "debrief");
     expect(html(doc)).toContain("Скидку получили все");
@@ -99,7 +102,8 @@ describe("экраны после прогона 1", () => {
     goto(doc, "d6", "results");
     const titles = screenView(doc).blocks.map((b: any) => b.title);
     expect(titles).toEqual(["Команды"]);
-    goto(doc, "d6", "takeaways");
+    goto(doc, "d6_lessons", "takeaways");
+    expect(teamView(doc, doc.teams[0]).blocks.some((b: any) => b.title === "Ловушки")).toBe(false);
     const tk = screenView(doc).blocks[0] as any;
     expect(tk).toMatchObject({ title: "Ловушки", text: true });
   });

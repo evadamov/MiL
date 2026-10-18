@@ -153,6 +153,8 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
       const ip = `${ptr}/inputs/${i}`;
       if (ids.has(inp.id)) diag({ code: "E012", message: `повтор поля ${inp.id}`, pos: at(ip) });
       ids.add(inp.id);
+      // Поле показывается до хода; условие не может зависеть от ответа этого же шага.
+      checkCond(inp.when, step, "legend", `${ip}/when`);
       if (isModelInput(inp)) {
         if (inp.default === undefined) diag({ code: "E043", message: `у ${inp.type} ${inp.id} нет default`, pos: at(ip), where: `step ${step.id}` });
         if (inp.type === "number" && !inp.samples) diag({ code: "E043", message: `у number ${inp.id} нет samples`, pos: at(ip), where: `step ${step.id}` });
@@ -391,7 +393,14 @@ export function validateScenario(dir: string, root = process.cwd()): ValidationR
         const paths = [...new Set([...t.text.matchAll(TEMPLATE_RE)].map((m) => m[1].trim()))];
         if (!paths.length) continue;
         const seen = new Map(paths.map((x) => [x, new Set<string>()]));
-        for (const { r } of runs) {
+        // Текст шага зависит только от ходов до него включительно: по одному пути на сочетание.
+        const upTo = new Set(sc.steps.slice(0, idx + 1).map((s) => s.id));
+        const distinct = new Map<string, PathResult>();
+        for (const { d, r } of runs) {
+          const k = keyOf(Object.fromEntries(Object.entries(d).filter(([key]) => upTo.has(key.split(".")[0]))));
+          if (!distinct.has(k)) distinct.set(k, r);
+        }
+        for (const r of distinct.values()) {
           const ctx = t.after ? { ...r.at[step.id], ...pathDataAt(sc, r, idx, true), input: r.at[step.id].input } : pathDataAt(sc, r, idx, false);
           for (const x of paths) seen.get(x)!.add(JSON.stringify(getPath({ ...ctx, p: sc.root.params }, x)));
         }

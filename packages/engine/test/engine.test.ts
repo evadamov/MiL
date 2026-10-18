@@ -88,6 +88,20 @@ describe("движок", () => {
     expect(runPath(sc, { "sell.guess": 5 }).inputs.sell.guess).toBe(5);
   });
 
+  it("условное поле появляется по прошлому ходу и не принимает значение на чужом пути", () => {
+    const collect = `duration: {min: 1, max: 1}
+inputs:
+  - id: extra
+    type: choice
+    label: Дополнительный ход
+    when: {expr: {">": [{var: inputs.sell.qty}, 10]}}
+    options: [{value: yes, label: Да}, {value: no, label: Нет}]
+    default: no`;
+    const sc = compileOk("t", { "scenario.md": twoSteps(SELL, collect) });
+    expect(runPath(sc, {}).inputs.collect.extra).toBe("no");
+    expect(runPath(sc, { "sell.qty": 10, "collect.extra": "yes" }).inputs.collect.extra).toBeNull();
+  });
+
   it("ход вне диапазона и чужой вариант — ошибка исполнения", () => {
     const sc = compileOk("t", { "scenario.md": twoSteps(SELL, "duration: {min: 1, max: 1}") });
     expect(() => runPath(sc, { "sell.qty": 500 })).toThrow(EngineError);

@@ -123,7 +123,15 @@ export function compileJson(dir: string, root: string): CompileResult {
       err("E040", `step ${h.id}: phase «${x.phase}» не объявлена в phases`, doc.map[`${ptr}/phase`] ?? h.pos);
       return;
     }
-    const block = sub(doc, ptr, ["id", "title", "phase", "legend", "slots"]);
+    const block = sub(doc, ptr, ["id", "title", "phase", "legend", "visual", "slots"]);
+    // JSON хранит текст вводной в legend, а картинку из блока sim — в visual.
+    // В StepBlock она по-прежнему называется legend.
+    if (x.visual !== undefined) {
+      (block.data as Record<string, unknown>).legend = x.visual;
+      for (const [key, pos] of Object.entries(doc.map))
+        if (key === `${ptr}/visual` || key.startsWith(`${ptr}/visual/`))
+          block.map[key.slice(ptr.length).replace(/^\/visual/, "/legend")] = pos;
+    }
     if (!check(v.step, block, `step ${h.id}`, diags)) return;
     register(`step:${h.id}`, block);
     steps.push({ ...h, phase: x.phase, legend: text(x.legend, `${ptr}/legend`), slots: slots(x.slots, `${ptr}/slots`), block: block.data as unknown as StepBlock });
@@ -191,7 +199,10 @@ export function toJson(sc: Scenario): object {
     description: sc.description || undefined,
     root: sc.root,
     phases: sc.phases.map((p) => ({ id: p.id, title: p.title, text: p.text || undefined, slots: slots(p.slots) })),
-    steps: sc.steps.map((s) => ({ id: s.id, title: s.title, phase: s.phase, legend: s.legend || undefined, slots: slots(s.slots), ...s.block })),
+    steps: sc.steps.map((s) => {
+      const { legend: visual, ...block } = s.block;
+      return { id: s.id, title: s.title, phase: s.phase, legend: s.legend || undefined, visual, slots: slots(s.slots), ...block };
+    }),
     pages: sc.pages.length ? sc.pages.map((p) => ({ id: p.id, title: p.title, text: p.text, from: p.from })) : undefined,
     lessons: sc.lessons.map(({ pos: _p, ...l }) => ({ ...l, text: l.text || undefined })),
     checks: sc.checks.map(({ pos: _p, ...c }) => c),

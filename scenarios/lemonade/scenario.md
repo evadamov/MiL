@@ -1,6 +1,6 @@
 ---
 id: lemonade
-version: 17
+version: 19
 title: Малыш и лимонад
 locale: ru
 duration_min: 90
@@ -11,12 +11,13 @@ include: [season-1-yard.md, season-2-park.md]
 ---
 
 Малыш продаёт лимонад — сначала во дворе, потом в парке на папин заём.
-Два сезона, двадцать шагов, шесть решений, которые влияют на деньги.
+Два сезона, двадцать один шаг, семь решений, которые влияют на деньги.
 Выручка и деньги, скидки, юнит-экономика и безубыточность, цена, каналы
 привлечения, прогноз.
 
 Канон чисел — [canon/context-v16.md](canon/context-v16.md). Сценарий обязан
-его воспроизводить: см. раздел `# checks`.
+его воспроизводить на эталонном пути: см. раздел `# checks`. Выбор приготовить
+два кувшина в среду добавляет новую ветку к этому канону.
 
 ```sim
 currency: {label: монет, short: 🪙}
@@ -167,10 +168,10 @@ from: d12
 
 # lessons
 
-## lesson revenue_is_not_cash · Считать продажу деньгами
+## lesson revenue_is_not_cash · Считать продажи деньгами
 
-Отделять выручку от денег: у отсрочки есть срок, возвратность и сегмент.
-Бесплатное и «потом» привлекают не тех, кто платит.
+Отделять выручку от поступлений денег. Учитывать сроки оплаты и
+возвратность долга у разных покупателей.
 
 ```sim
 phase: yard
@@ -179,13 +180,15 @@ kind: contrast
 contrast: {input: d2.jug, a: buy, b: skip}
 assert:
   and:
-    - {">": [{var: a.at.d3.pl.cumulative}, {var: b.at.d3.pl.cumulative}]}
-    - {"<": [{var: a.at.d3.cash}, {var: b.at.d3.cash}]}
+    - {">": [{var: a.at.d2.pl.cumulative}, {var: b.at.d2.pl.cumulative}]}
+    - {"<": [{var: a.at.d2.cash}, {var: b.at.d2.cash}]}
+    - {">": [{var: a.at.d3.pl.lines.bad_debt}, {var: b.at.d3.pl.lines.bad_debt}]}
 ```
 
 ## lesson interest_is_not_demand · Принимать интерес за спрос
 
-Спрашивать про деньги, а не про желание.
+Проверять готовность купить по конкретной цене и на конкретных условиях
+оплаты.
 
 ```sim
 phase: yard
@@ -195,7 +198,7 @@ kind: unverified
 
 ## lesson discount_without_math · Делать скидки для роста, не считая экономику
 
-Дополнительный спрос должен компенсировать потерю маржи.
+Считать, какой дополнительный объём продаж компенсирует потерю маржи.
 
 ```sim
 phase: yard
@@ -208,9 +211,10 @@ assert:
     - {"<": [{var: at.d5.pl.day}, {var: at.d4.pl.day}]}
 ```
 
-## lesson segment_size · Не учитывать размер сегмента
+## lesson segment_size · Расти, не учитывая размер доступного сегмента
 
-Проверять потолок рынка до масштабирования.
+При остановке роста проверять, сколько потенциальных покупателей ещё
+осталось в сегменте.
 
 ```sim
 phase: yard
@@ -218,14 +222,20 @@ takeaway: true
 kind: unverified
 ```
 
-## lesson scaling_first_sales · Масштабировать по первым продажам
+## lesson scaling_first_sales · Принимать всплеск продаж за устойчивый спрос
 
-Отделять всплеск от устойчивого спроса.
+Проверять, повторятся ли продажи и сохранятся ли условия, которые их
+обеспечили.
 
 ```sim
 phase: yard
 takeaway: true
-kind: unverified
+kind: path
+assert:
+  and:
+    - {">": [{var: at.d2.metrics.traffic}, {var: at.d3.metrics.traffic}]}
+    - {">": [{var: at.d2.metrics.sold}, {var: at.d3.metrics.sold}]}
+    - {"==": [{var: at.d3.metrics.sold}, {var: at.d4.metrics.sold}]}
 ```
 
 ## lesson unit_economics_is_not_business · Положительная экономика одной продажи ≠ бизнес
@@ -379,6 +389,7 @@ assert:
 ```sim
 decisions:
   d2.jug: buy
+  d3.prep: one_jug
   d9.cola_price: 7
   d10.flyers: 300
   d11.lemon_price: 9
@@ -395,11 +406,18 @@ expect:
   at.d2.metrics.sold_credit: 16
   at.d3.pl.day: -5
   at.d3.cash: 110
+  at.d3.pl.lines.revenue: 70
+  at.d3.pl.lines.cogs: 28
+  at.d3.pl.lines.waste: 2
   at.d3.pl.lines.bad_debt: 45
   at.d3.metrics.collections.returned_amount: 35
   at.d4.pl.day: 42
+  at.d4.pl.lines.revenue: 70
+  at.d4.pl.lines.cogs: 28
   at.d4.cash: 152
   at.d5.pl.day: 36
+  at.d5.pl.lines.revenue: 72
+  at.d5.pl.lines.cogs: 36
   at.d5.cash: 188
   at.d5.pl.phase: 203
   at.d5.balance.equipment: 15
@@ -451,6 +469,7 @@ expect:
   at.d2.metrics.sold: 15
   at.d2.metrics.sold_cash: 9
   at.d2.metrics.sold_credit: 6
+  at.d3.input.prep: null
   at.d3.pl.lines.bad_debt: 10
   at.d3.pl.cumulative: 115
   at.d3.cash: 115
@@ -467,6 +486,17 @@ sweep:
   rows:
     - {value: buy, expect: {at.d3.pl.cumulative: 125, at.d3.cash: 110}}
     - {value: skip, expect: {at.d3.pl.cumulative: 115, at.d3.cash: 115}}
+```
+
+## check sweep_d3_prep · Д3: наполнять ли второй кувшин
+
+```sim
+sweep:
+  base: reference_team
+  input: d3.prep
+  rows:
+    - {value: one_jug, expect: {at.d3.metrics.produced: 15, at.d3.metrics.sold: 14, at.d3.metrics.waste_units: 1, at.d3.pl.lines.revenue: 70, at.d3.pl.lines.waste: 2, at.d3.pl.day: -5, at.d3.cash: 110}}
+    - {value: two_jugs, expect: {at.d3.metrics.produced: 30, at.d3.metrics.sold: 14, at.d3.metrics.waste_units: 16, at.d3.pl.lines.revenue: 70, at.d3.pl.lines.waste: 32, at.d3.pl.day: -35, at.d3.cash: 80}}
 ```
 
 ## check sweep_d9 · Д9: цена колы

@@ -127,7 +127,9 @@ export function runPath(sc: Scenario, decisions: Decisions): PathResult {
   sc.steps.forEach((step, stepIndex) => {
     const sid = step.id;
     const input: Record<string, string | number | null> = {};
-    for (const inp of step.block.inputs ?? []) input[inp.id] = inputValue(step, inp, decisions);
+    const beforeInput = { p, inputs: result.inputs, at: result.at };
+    for (const inp of step.block.inputs ?? [])
+      input[inp.id] = evalCondition(inp.when, step, sc, beforeInput) ? inputValue(step, inp, decisions) : null;
     result.inputs[sid] = input;
 
     const firstEntry = ledger.journal.length;
